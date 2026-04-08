@@ -1,0 +1,300 @@
+"""
+出阵模块 —— 地图循环刷资源
+
+变种：
+  run_sortie_4_4_loop  —— 4-4，队伍2，每15次检查依赖札决定休息时长
+  run_sortie_4_3_loop  —— 4-3，队伍4，每15次固定休息，不检查依赖札
+
+单次出阵流程：
+  1. 气力检查：非队长刀气力 < FATIGUE_LOW_THRESHOLD → 换至队长位(slot 1)
+  2. 重伤检查：有重伤则先触发全队治疗
+  3. sally/sally（选图，无 party_no）  → HTML
+  4. sally/sally（选队，含 party_no）  → JSON
+  5. sally/startup                     → JSON，history 长度 ÷ 2 = 本次战斗场数
+  6. [sally/forward + battle/battle] × N
+  7. 回本丸同步状态 + 快速远征检查
+
+端点（已通过抓包确认）：
+  user/item  — 查询道具，响应顶层 bill = 依赖札数量
+  episode_id=4, field_id=4, party_no=2 — 4-4 地图参数
+  episode_id=4, field_id=3, party_no=4 — 4-3 地图参数
+"""
+
+import time
+from loguru import logger
+
+from .client import ToukenClient
+from .battle import battle_sleep, FORMATION_ID, set_sword, remove_sword, get_party_slots, recover_sword_fatigue
+from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, is_heavily_injured
+from .expedition import quick_expedition_check
+
+# ── 共用配置 ──────────────────────────────────────────────────
+FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队长位
+FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
+
+# ── 4-4 循环配置（队伍2，检查依赖札）────────────────────────
+SORTIE_44_PARTY_NO:              int = 2
+SORTIE_44_EPISODE_ID:            int = 4
+SORTIE_44_FIELD_ID:              int = 4   # 4-4
+SORTIE_44_CHECK_INTERVAL:        int = 15
+YORAIFUDA_REST_LOW_THRESHOLD:    int = 10  # 新获得依赖札低于此值时的短休息判定
+YORAIFUDA_REST_SHORT_SECONDS:    int = 5   # 新获得 < 10 时休息时长
+YORAIFUDA_REST_LONG_SECONDS:     int = 10  # 新获得 >= 10 时休息时长
+
+# ── 4-3 循环配置（队伍4，固定休息，不检查依赖札）────────────
+SORTIE_43_PARTY_NO:              int = 4
+SORTIE_43_EPISODE_ID:            int = 4
+SORTIE_43_FIELD_ID:              int = 3   # 4-3
+SORTIE_43_CHECK_INTERVAL:        int = 15
+SORTIE_43_REST_SECONDS:          int = 5   # 固定休息时长
+
+
+# ── 白山移除（4-4 出阵前调用）────────────────────────────────
+
+def remove_hakusan_for_sortie(client: ToukenClient) -> None:
+    """
+    4-4 循环前将白山吉光从 部隊2 移除，使末位成员升为新队长（槽1）。
+
+    步骤：
+      1. 找出 部隊2 中序号最大的非槽1成员（末位）
+      2. setsword(slot=末位, sid=白山) → 白山换至末槽，末位成员自动换到槽1成为新队长
+      3. removesword(slot=末位, sid=白山) → 移除白山
+    """
+    conquest_data = client.get_conquest_data()
+    hakusan_sid = find_hakusan_serial_id(conquest_data)
+    if hakusan_sid is None:
+        logger.warning("找不到白山吉光，跳过移除")
+        return
+
+    slots = get_party_slots(conquest_data, HAKUSAN_PARTY_NO)
+    if slots.get(1) != hakusan_sid:
+        logger.debug(f"部隊{HAKUSAN_PARTY_NO} 槽1不是白山（sid={slots.get(1)}），跳过")
+        return
+
+    last_order = max((o for o in slots if o > 1), default=None)
+    if last_order is None:
+        logger.warning("部隊2只有白山一人，无其他成员可互换，跳过移除")
+        return
+
+    last_sid = slots[last_order]
+    logger.info(
+        f"移除白山吉光：槽1↔槽{last_order}（serial_id={last_sid}升为新队长）..."
+    )
+    set_sword(client, HAKUSAN_PARTY_NO, last_order, hakusan_sid)
+    battle_sleep()
+    remove_sword(client, HAKUSAN_PARTY_NO, last_order, hakusan_sid)
+    battle_sleep()
+    logger.info(f"  白山已移除，部隊{HAKUSAN_PARTY_NO} 新队长 serial_id={last_sid}")
+
+
+# ── 道具查询 ──────────────────────────────────────────────────
+
+def get_bill(client: ToukenClient) -> int:
+    """查询当前依赖札数量（user/item 响应顶层 bill 字段）"""
+    resp = client._post("user/item")
+    bill = resp.get("bill", 0)
+    logger.debug(f"依赖札当前数量：{bill}")
+    return bill
+
+
+# ── 气力换位 ──────────────────────────────────────────────────
+
+def adjust_captain_for_fatigue(client: ToukenClient, party_no: int) -> None:
+    """
+    检查指定队伍非队长刀气力，若有低于 FATIGUE_LOW_THRESHOLD 的，
+    将气力最低的那把换至队长位（slot 1）。
+    使用 setsword swap，不调用 removesword（槽1队长无法被移除）。
+    """
+    conquest_data = client.get_conquest_data()
+    slots = get_party_slots(conquest_data, party_no)
+    if not slots:
+        return
+
+    all_swords = conquest_data.get("sword", {})
+
+    candidate_order: int | None = None
+    candidate_sid:   int | None = None
+    lowest_fatigue = FATIGUE_LOW_THRESHOLD
+
+    for order, sid in slots.items():
+        if order == 1:
+            continue
+        fat = all_swords.get(str(sid), {}).get("fatigue", FATIGUE_LOW_THRESHOLD)
+        if fat < lowest_fatigue:
+            lowest_fatigue = fat
+            candidate_order = order
+            candidate_sid = sid
+
+    if candidate_sid is None:
+        logger.debug(f"队{party_no}气力检查：全员正常，无需换位")
+        return
+
+    logger.info(
+        f"队{party_no} serial_id={candidate_sid} 气力={lowest_fatigue}<{FATIGUE_LOW_THRESHOLD}，"
+        f"换至队长位（槽1）"
+    )
+    set_sword(client, party_no, 1, candidate_sid)
+    battle_sleep()
+
+
+# ── 气力恢复检查（出阵后调用）────────────────────────────────
+
+def _check_and_recover_fatigue(client: ToukenClient, party_no: int) -> None:
+    """
+    出阵结束后检查队伍气力。
+    低于 FATIGUE_LOW_THRESHOLD 的刀达 3 把及以上，或任意刀低于 FATIGUE_CRITICAL_THRESHOLD，
+    逐刀跑 1-1 补满气力。
+    """
+    partyinfo_resp = client._post("party/getpartyinfo", extra={"party_no": party_no})
+    low_sids: list[int] = []
+    critical_sids: list[int] = []
+    for str_sid, sword_data in partyinfo_resp.get("sword", {}).items():
+        fat = sword_data.get("fatigue", 100)
+        sid = int(str_sid)
+        if fat < FATIGUE_CRITICAL_THRESHOLD:
+            critical_sids.append(sid)
+            low_sids.append(sid)
+        elif fat < FATIGUE_LOW_THRESHOLD:
+            low_sids.append(sid)
+    if len(low_sids) >= 3 or critical_sids:
+        logger.info(
+            f"队{party_no} 触发1-1气力恢复：低气力刀{len(low_sids)}把"
+            + (f"，极低气力（<{FATIGUE_CRITICAL_THRESHOLD}）：{critical_sids}" if critical_sids else "")
+        )
+        recover_sword_fatigue(client, party_no, low_sids)
+
+
+# ── 单次出阵 ─────────────────────────────────────────────────
+
+def _run_single_sortie(
+    client: ToukenClient,
+    party_no: int,
+    episode_id: int,
+    field_id: int,
+) -> None:
+    """
+    执行一次出阵（不含气力/重伤检查）。
+    战斗场数由 sally/startup 的 history 动态决定。
+    """
+    client._post("sally/sally", extra={
+        "episode_id": episode_id,
+        "field_id":   field_id,
+    })
+    battle_sleep()
+
+    client._post("sally/sally", extra={
+        "episode_id": episode_id,
+        "field_id":   field_id,
+        "party_no":   party_no,
+    })
+    battle_sleep()
+
+    startup_resp = client._post("sally/startup")
+    history = startup_resp.get("history", [])
+    battle_count = max(len(history) // 2, 1)
+    logger.info(f"  本次路线：{battle_count} 场战斗")
+    battle_sleep()
+
+    for i in range(1, battle_count + 1):
+        logger.debug(f"  节点 {i}/{battle_count}")
+        forward_resp = client._post("sally/forward", extra={"direction": 0})
+        battle_sleep()
+
+        # 队长重伤时服务器返回 status≠0，无法继续出阵
+        if forward_resp.get("status", 0) != 0:
+            logger.warning(
+                f"  节点 {i}：forward status={forward_resp.get('status')}，"
+                f"停止出阵（队长重伤）"
+            )
+            break
+
+        client._post("battle/battle", extra={"formation_id": FORMATION_ID})
+        battle_sleep()
+
+        # 道中重伤检查：非最终节点战斗后，有重伤则立刻停止，不进入下一节点
+        # 注意：conquest 无 hp/hp_max 字段，必须用 getpartyinfo 才能检测到重伤
+        if i < battle_count:
+            pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+            battle_sleep()
+            injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
+            if injured:
+                logger.warning(
+                    f"  节点{i}后检测到重伤（serial_id={injured}），停止出阵"
+                )
+                break
+
+    client.get_game_state()
+    logger.info("  出阵结束，已回本丸")
+
+
+# ── 4-4 循环（队伍2，检查依赖札）────────────────────────────
+
+def run_sortie_4_4_loop(client: ToukenClient) -> None:
+    """
+    队伍2 无限循环刷 4-4。
+    每 SORTIE_44_CHECK_INTERVAL 次检查依赖札增量：
+      < 10个 → 休息 5s；>= 10个 → 休息 10s。
+    按 Ctrl+C 手动停止。
+    白山吉光现驻守 部隊1，与本队（部隊2）互不干扰，无需移除。
+    """
+    initial_bill = get_bill(client)
+    last_check_bill = initial_bill
+    total_runs = 0
+    logger.info(
+        f"4-4 循环开始（队伍{SORTIE_44_PARTY_NO}），依赖札初始：{initial_bill}，"
+        f"每 {SORTIE_44_CHECK_INTERVAL} 次检查"
+    )
+
+    while True:
+        adjust_captain_for_fatigue(client, SORTIE_44_PARTY_NO)
+        run_repair_check(client, SORTIE_44_PARTY_NO)
+
+        total_runs += 1
+        logger.info(f"[第 {total_runs} 次] 出阵 4-4（队伍{SORTIE_44_PARTY_NO}）...")
+        _run_single_sortie(client, SORTIE_44_PARTY_NO, SORTIE_44_EPISODE_ID, SORTIE_44_FIELD_ID)
+
+        _check_and_recover_fatigue(client, SORTIE_44_PARTY_NO)
+        quick_expedition_check(client)
+
+        if total_runs % SORTIE_44_CHECK_INTERVAL == 0:
+            current_bill = get_bill(client)
+            gained = current_bill - last_check_bill
+            rest = YORAIFUDA_REST_SHORT_SECONDS if gained < YORAIFUDA_REST_LOW_THRESHOLD else YORAIFUDA_REST_LONG_SECONDS
+            logger.info(
+                f"[第 {total_runs} 次检查] 依赖札：{last_check_bill} → {current_bill}"
+                f"（+{gained}），休息 {rest}s..."
+            )
+            time.sleep(rest)
+            logger.info("  休息结束，继续新一轮...")
+            last_check_bill = current_bill
+
+
+# ── 4-3 循环（队伍4，固定休息）──────────────────────────────
+
+def run_sortie_4_3_loop(client: ToukenClient) -> None:
+    """
+    队伍4 无限循环刷 4-3。
+    每 SORTIE_43_CHECK_INTERVAL 次固定休息 SORTIE_43_REST_SECONDS 秒，不检查依赖札。
+    按 Ctrl+C 手动停止。
+    """
+    total_runs = 0
+    logger.info(
+        f"4-3 循环开始（队伍{SORTIE_43_PARTY_NO}），"
+        f"每 {SORTIE_43_CHECK_INTERVAL} 次休息 {SORTIE_43_REST_SECONDS}s"
+    )
+
+    while True:
+        adjust_captain_for_fatigue(client, SORTIE_43_PARTY_NO)
+        run_repair_check(client, SORTIE_43_PARTY_NO)
+
+        total_runs += 1
+        logger.info(f"[第 {total_runs} 次] 出阵 4-3（队伍{SORTIE_43_PARTY_NO}）...")
+        _run_single_sortie(client, SORTIE_43_PARTY_NO, SORTIE_43_EPISODE_ID, SORTIE_43_FIELD_ID)
+
+        _check_and_recover_fatigue(client, SORTIE_43_PARTY_NO)
+        quick_expedition_check(client)
+
+        if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
+            logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
+            time.sleep(SORTIE_43_REST_SECONDS)
+            logger.info("  休息结束，继续新一轮...")

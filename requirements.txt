@@ -1,0 +1,6 @@
+playwright==1.49.1
+httpx==0.27.0
+apscheduler==3.10.4
+loguru==0.7.2
+python-dotenv==1.0.1
+pycookiecheat==0.8.0

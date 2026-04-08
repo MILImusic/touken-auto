@@ -1,0 +1,297 @@
+===================================================================
+刀剣乱舞 日服 API 端点参考
+最后更新：2026-04-04
+===================================================================
+
+【说明】
+  - 所有端点均为 POST，附带 sword + t 参数
+  - HP 准确性问题：conquest / home/index 的刀剑 HP 数据不可靠
+    目前唯一能读到 HP 的端点是 party/getpartyinfo，但有上下文限制（见下）
+
+【status 错误码】
+  status=0   → 正常
+  status=91  → session 失效（次日更新/重新登录），需重新获取 sword/token
+  status=97  → 服务器维护中，所有端点均返回此值，程序应立即停止
+  其他非0值  → 各端点含义不同（见具体端点说明）
+
+-------------------------------------------------------------------
+端点               | 对应页面/操作
+-------------------------------------------------------------------
+
+■ home/index
+  页面：本丸（首页）
+  触发：登录、回本丸
+  返回数据（已确认）：
+    party[N].slot[N].serial_id     ← 各队槽位 serial_id（无 HP！）
+    resource.charcoal/steel/...    ← 资源数量
+    resource.bill                  ← 依赖札数量
+    situation.conquest[N]          ← 各队出征状态（field_id, finished_at）
+    situation.repair[N]            ← 修理炉状态
+    badge_count.mission_achieved   ← 任务徽章数
+    ev                             ← 当前活动 ID
+    t                              ← 新 CSRF token
+  注意：
+    - 无 sword 顶层字段
+    - party slot 仅含 serial_id，无 HP / fatigue / 装备数据
+
+■ conquest
+  页面：出陣準備（远征队选择）
+  触发：进入远征页
+  返回数据（已确认）：
+    sword[serial_id].fatigue       ← 气力（注：可能不准确）
+    sword[serial_id].sword_id      ← 刀种 ID（静态）
+    sword[serial_id].mobile        ← 机动力
+    sword[serial_id].mobile_up     ← 机动力加成
+    party[N].slot[N].serial_id     ← 各队槽位
+    party[N].status                ← 队伍状态（1=待机, 2=出征中）
+    t                              ← 新 CSRF token
+  注意：
+    - 无 hp / hp_max 字段（HP 不在此端点）★ 绝对不能用 conquest 做重伤检测 ★
+    - fatigue 数据可能不准，需 getpartyinfo 校验
+    - 曾导致 bug：道中重伤检查误用 conquest，is_heavily_injured 永远返回 False，
+      刀打完一节点继续打下一节点直到碎掉
+
+■ party/getpartyinfo?party_no=N
+  页面：部隊編成（特定队伍详情）
+  触发：查看某支队伍编成
+  返回数据（已确认）：
+    sword[serial_id].hp            ← 当前 HP ★
+    sword[serial_id].hp_max        ← 最大 HP ★
+    sword[serial_id].fatigue       ← 气力（准确）
+    sword[serial_id].item_id       ← 御守 ID
+    sword[serial_id].equip_serial_id1~4 ← 刀装
+    sword[serial_id].horse_serial_id    ← 馬
+    t                              ← 新 CSRF token
+  HP 准确性说明：
+    ✓ 普通出阵（4-3/4-4）道中/结束后：HP 准确
+    ✓ 地下城 resetsallystatus 后（战斗发生过）：HP 准确
+    ? 地下城 eventsally 失败（未进入战斗）后：HP 是否准确 ← 待验证
+    ? 本丸待机中（上次出阵受伤未治疗）：HP 是否反映旧伤 ← 待验证
+    ✗ 本丸 sally（出阵地图页）导航后：HP 被重置为本丸值
+  fatigue 准确性说明：
+    ✗ 登录后立即调用（home/index 后首次 getpartyinfo）：fatigue 返回缓存值（如固定100），
+      与实际气力不符。服务器需经过若干交互后才刷新。
+      实测：白山吉光实际气力49，登录后 getpartyinfo 返回100。
+      影响：ensure_hakusan_fatigue 在登录时读数不准，但 HAKUSAN_FATIGUE_MIN=25 阈值
+      足够低，行为上不受影响。
+
+■ party/list
+  页面：部隊一覧（所有队伍列表）
+  触发：查看全部队伍
+  返回：text/html（无 JSON 响应体）
+  用途：导航操作，不提取数据
+
+■ sally/eventsally
+  页面：地下城层入口
+  参数：event_id, event_field_id, party_no, item_id, event_layer_id
+        [is_continuation=1 表示继续调查]
+  返回：
+    status=0   → 进层成功
+    status=2   → 进层失败（队长重伤 / 当日限制 / 活动未开放等）
+    t          ← 新 token（注：失败时可能无新 token）
+  注意：status=2 的具体原因无法从响应区分，需结合上下文判断
+
+■ sally/eventforward?direction=0
+  页面：地下城节点推进
+  返回：
+    status=0   → 正常
+    status≠0   → 队长重伤，无法继续
+    is_finish  → true 表示本层结束
+    item_effect→ ≠0 为物资节点（不触发战斗）
+    formation_id → 游戏推荐阵型
+
+■ battle/battle?formation_id=N
+  页面：战斗
+  返回：战斗结果（HP 变化体现在后续 getpartyinfo）
+
+■ sally/resetsallystatus
+  页面：层结算（出阵结束/中途撤退确认）
+  参数：无额外参数
+  返回：sword+t（更新 token 和刀剑数据）
+  注意：
+    - 调用后进入"HP 准确窗口"（已发生过战斗的情况下）
+    - 此后调用 getpartyinfo 可读到准确 HP
+    - 调用 sally 等导航端点后窗口关闭
+
+■ sally/updateautoplayflaginsally?type=3
+  页面：重伤弹窗确认
+  触发：检测到重伤后，对应游戏弹出的确认对话框
+  返回：t
+
+■ sally（无子路径）
+  页面：出阵地图选择页
+  触发：进入出阵界面
+  返回：JSON（可能含 script 字段用于日常对话）
+  注意：调用此端点会重置 HP 到本丸值
+
+■ home/leave?serial_id=N&is_leave=0
+  操作：拒绝访客修行申请
+  返回：t
+
+■ party/setsword
+  操作：将刀设置到指定槽位（可触发 swap）
+  参数：party_no, order, serial_id
+  返回：更新后的队伍数据 + t
+
+■ party/removesword
+  操作：从槽位移除刀（队长槽1不可移除）
+  参数：party_no, order, serial_id
+  返回：t
+
+■ equip/removeall?sword_serial_id=N
+  操作：卸除刀的全部装备（刀装+马+宝物+御守）
+  返回：t
+
+■ equip/setequip
+  操作：装备刀装/马
+  参数：sword_serial_id, serial_id, slot_no
+  返回：t
+
+■ equip/setitem
+  操作：装备御守（自动从来源刀转移）
+  参数：sword_serial_id, consumable_id
+  返回：t
+
+■ equip/autosetequip
+  操作：自动装备最优刀装
+  参数：sword_serial_id, is_event, is_firstattack
+  返回：t
+
+■ user/item
+  页面：道具一览
+  返回：
+    bill   ← 依赖札数量（顶层字段）
+
+■ practice
+  页面：演练选手列表
+  返回：对手列表
+
+■ practice/offer?opponent_id=N
+  操作：选择演练对手
+  返回：对手详情
+
+■ battle/practicescout
+  操作：侦查演练对手
+  返回：
+    status=0   → 侦查成功，含 formation_id
+    status=2   → 今日已完成此对手
+    formation_id=0 → 侦查失败（信息不足）
+
+■ battle/practicebattle?formation_id=N
+  操作：演练战斗
+  返回：战斗结果 + t
+
+■ sally/parallelpastsally
+  页面：异去出阵
+  参数：episode_id, field_id, party_no, item_id
+  返回：
+    status=0   → 成功
+    status=2   → 今日次数已用完
+
+■ sally/parallelpaststartup
+  操作：异去出阵启动，获取路线
+  返回：history（路线节点列表）
+
+■ sally/parallelpastforward
+  操作：异去推进
+  返回：status, is_finish, scout（含 formation_id）
+
+-------------------------------------------------------------------
+【待验证问题】
+-------------------------------------------------------------------
+Q1: party/getpartyinfo 在"本丸待机"状态下能否检测到地下城遗留重伤？
+    ✓ 已确认根本原因：代码 Bug，非 API 问题（见下方【已确认结论】）
+    现象解释：sword 字段值中无 serial_id，旧代码用 sd.get("serial_id") 永远 None，
+    导致所有刀被跳过，始终显示"全队无重伤刀"。
+
+Q2: 重伤状态标记字段是否存在？
+    △ 未完全确认。已知 sword 数据有 status 字段（值 3 出现在伤刀和满血刀），
+    含义不明。当前不依赖 status 字段，仅依靠 HP ≤ 25% 判断重伤。
+
+Q3: eventsally status=2 的真实原因？
+    ✓ 根本原因已确认：HEAVY_INJURY_RATIO 阈值设低了（0.25），漏检了重伤刀。
+    游戏实测重伤标准约 HP ≤ 30%（官方未公布精确值，玩家 wiki 实测约 30~31%）。
+    案例：378866067 HP 13/45（28.9%），0.25 阈值 miss，0.30 阈值 hit → 治疗后可进层。
+    修复：HEAVY_INJURY_RATIO 从 0.25 → 0.30，全局生效，无需特殊路径。
+
+-------------------------------------------------------------------
+【已确认结论】
+-------------------------------------------------------------------
+
+■ getpartyinfo sword 数据格式（重要！）
+  响应格式：sword["378866067"] = {"hp": 19, "hp_max": 56, "fatigue": 100, ...}
+  ★ 键是 serial_id 字符串，值（dict）内部不含 serial_id 字段 ★
+  正确迭代方式：
+    for str_sid, sd in resp.get("sword", {}).items():
+        sid_int = int(str_sid)  # 从键取 serial_id
+  错误方式（曾导致"全队无重伤刀" bug）：
+    for sd in resp.get("sword", {}).values():
+        sid = sd.get("serial_id")  # 永远 None！
+
+■ 重伤（重傷）判定阈值（2026-04-04 网络查证 + 实测确认）
+  官方未公布精确值，玩家 wiki 实测约 HP ≤ 30%（部分来源写 31%）。
+  案例验证：serial_id=378866067 HP=13/45（28.9%），eventsally 被拦截 → 确为重伤。
+  ★ 代码中 HEAVY_INJURY_RATIO = 0.30（原为 0.25，漏检 25%~30% 区间的重伤刀）★
+  伤势分级参考（实测，非官方）：
+    无伤  100%
+    轻伤  ≤ 90%
+    中伤  ≤ 65%
+    重伤  ≤ 30%（当前使用值）
+
+■ HP 自然恢复机制
+  sword 数据含 recovered_at 字段（如 "2026-04-02 00:07:11"）。
+  注意：wiki 明确说明"重伤状态不会随时间自动消除"，
+  recovered_at 的具体含义尚不明确（可能是装备回复或其他机制）。
+
+■ sword.status 字段
+  已知值 3 同时出现在：重伤刀（HP 14/55）和满血刀（HP 53/53）。
+  当前未使用此字段做重伤判断，意义待进一步确认。
+
+■ 白山吉光编成变更（2026-04-04）
+  部隊1 为专属治疗队，白山吉光常驻槽1，平时只放白山（槽2-6 空置）。
+  原为 部隊2，已更新 HAKUSAN_PARTY_NO = 1。
+  部隊1 与各作战队（部隊2=4-4、部隊3=地下城、部隊4=4-3）互不干扰，
+  无需在 4-4 循环前移除白山（remove_hakusan_for_sortie 调用已删除）。
+
+■ 远征配置变更（2026-04-04）
+  部隊1 移为专属治疗队后，已从 EXPEDITION_TARGETS 中删除。
+  当前远征目标：队2=3-2、队3=4-2、队4=5-1、队5=5-2。
+  队1（白山治疗队）永远不参与远征，空闲时也不自动出征。
+  run_expedition_cycle 说明更新：仅队5空闲即发，不再含队1。
+
+■ eventsally status=2 的处理策略（2026-04-04 确认）
+  status=2 原因无法区分（重伤/日限/活动关闭），当前方案：
+  1. 触发全队 getpartyinfo 检查（使用 .items() 正确迭代）
+  2. 若检测到重伤（HP ≤ 30%）→ 执行治疗，归城后重试
+  3. 若无重伤且连续 2 次失败 → 判定为今日上限，停止循环
+
+■ 道中重伤检查相关 bug（2026-04-04 修复，dungeon.py + sortie.py）
+  Bug 1：道中重伤检查误用 conquest 数据（dungeon.py 和 sortie.py 均有）
+    conquest 无 hp/hp_max 字段，is_heavily_injured 永远返回 False，
+    刀打完一节点继续打下一节点直到碎掉。
+    修复：改用 party/getpartyinfo 做道中检查。
+
+  Bug 2：_check_heavy_injury 硬编码阈值 ≤ 25（dungeon.py）
+    与全局 HEAVY_INJURY_RATIO（0.30）脱节，阈值改了这里没跟上。
+    修复：改用 is_heavily_injured() 函数，阈值统一由 HEAVY_INJURY_RATIO 控制。
+
+  Bug 3：repair.py 治疗流程中两处误用 conquest
+    - equip_snapshot 用 conquest 取，conquest 无 equip 字段 → 快照全 None →
+      卸装步骤被跳过 → 远程刀装 AOE 清场，白山无法治疗
+    - 1-1 后验证治疗结果用 conquest 取 HP → conquest 无 HP → 治疗失败永远检测不到
+    修复：equip_snapshot 改用已合并 getpartyinfo 的 all_swords；
+          治疗后验证改用 getpartyinfo(HAKUSAN_PARTY_NO)。
+
+  Bug 4：low_fatigue_sids / low_sids 用 sword_data["serial_id"]（dungeon.py + sortie.py）
+    getpartyinfo sword 值中无 serial_id 字段，导致气力列表永远为空、
+    重伤日志永远打印 None。
+    修复：改用 .items() 从键取 serial_id。
+
+-------------------------------------------------------------------
+【HP 检测方案对比】
+-------------------------------------------------------------------
+方案          | 端点调用       | 准确性      | 适用场景
+conquest      | conquest      | 无HP字段    | ✗ 不可用（★绝不能用于重伤检测★）
+home/index    | home/index    | 无HP字段    | ✗ 不可用
+getpartyinfo  | getpartyinfo  | 准确（限制）| ✓ 本丸待机 / 道中重伤检测（需 .items() 迭代）
+注入数据      | 层内window内  | 准确        | ✓ 地下城战斗后专用（resetsallystatus 后）
