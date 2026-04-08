@@ -43,7 +43,7 @@ DUNGEON_DEFAULT_FORMATION:  int = 1   # eventforward 未给出 formation_id 时�
 DUNGEON_FATIGUE_THRESHOLD:  int = 70  # 低于此值的刀优先排到前列 / 触发归城重排
 DUNGEON_FATIGUE_CRITICAL:   int = 40  # 低于此值即使只有1把也触发1-1恢复
 DUNGEON_FLOORS_PER_CYCLE:   int = 10  # 每打完多少层归城一次调整气力
-DUNGEON_REST_SECONDS:       int = 10  # 归城时休息时长
+DUNGEON_REST_SECONDS:       int = 5   # 归城时休息时长
 
 
 # ── 气力排序 ────────────────────────────────────────────────────

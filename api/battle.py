@@ -46,7 +46,7 @@ RECOVERY_BATTLES    = 2   # 1-1 共两场战斗
 FORMATION_ID        = 4   # 鱼鳞阵
 
 # 每次出阵之间等待时间（秒），加随机抖动模拟人类操作
-BATTLE_DELAY = 0.6  # 基准延迟，实际范围 0.1～1.6s
+BATTLE_DELAY = 0.5  # 基准延迟，实际范围 0.0～1.5s
 
 
 def battle_sleep() -> None:
