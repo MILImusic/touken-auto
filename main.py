@@ -150,31 +150,44 @@ def _input_with_timeout(prompt: str, timeout: int) -> str | None:
         signal.alarm(0)
 
 
+_daily_done = False
+
+
 def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
     """执行指定模式"""
+    global _daily_done
+
+    def _ensure_daily():
+        global _daily_done
+        if not _daily_done:
+            run_daily(client, state)
+            _daily_done = True
+        else:
+            logger.info("日常任务本次 session 已执行，跳过")
+
     if mode == 1:
         start_layer = int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
-        run_daily(client, state)
+        _ensure_daily()
         run_dungeon_climb(client, start_layer=start_layer)
 
     elif mode == 2:
-        run_daily(client, state)
+        _ensure_daily()
 
     elif mode == 3:
         layer_id = int(input("请输入循环层数（如 88）: ").strip())
-        run_daily(client, state)
+        _ensure_daily()
         run_dungeon_floor_loop(client, layer_id=layer_id)
 
     elif mode == 4:
-        run_daily(client, state)
+        _ensure_daily()
         run_sortie_4_4_loop(client)
 
     elif mode == 5:
-        run_daily(client, state)
+        _ensure_daily()
         run_sortie_4_3_loop(client)
 
     elif mode == 6:
-        run_daily(client, state)
+        _ensure_daily()
         run_sortie_7_3_loop(client)
 
     elif mode == 7:
@@ -216,10 +229,23 @@ def main():
 
             # 模式完成，等待选择下一个
             logger.info(f"模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
+            print()
+            # 复用带颜色的模式列表
             R = _C["reset"]
-            print(f"\n{_C['bold']}可选模式：{R}")
-            for num, desc in MODES.items():
-                print(f"  {num}. {desc}")
+            print(f"{_C['bold']}可选模式：{R}")
+            print(f"  {_C['dim']}── 日常 ──{R}")
+            print(f"  {_C['green']}2. {MODES[2]}{R}")
+            print(f"  {_C['dim']}── 活动循环 ──{R}")
+            print(f"  {_C['yellow']}1. {MODES[1]}{R}")
+            print(f"  {_C['yellow']}3. {MODES[3]}{R}")
+            print(f"  {_C['dim']}── 普通地图循环 ──{R}")
+            print(f"  {_C['cyan']}4. {MODES[4]}{R}")
+            print(f"  {_C['cyan']}5. {MODES[5]}{R}")
+            print(f"  {_C['cyan']}6. {MODES[6]}{R}")
+            print(f"  {_C['dim']}── 其他 ──{R}")
+            print(f"  {_C['magenta']}7. {MODES[7]}{R}")
+            print(f"  {_C['magenta']}8. {MODES[8]}{R}")
+            print(f"  {_C['magenta']}9. {MODES[9]}{R}")
             raw = _input_with_timeout(
                 f"\n输入模式编号（1-9），或回车退出: ",
                 NEXT_MODE_TIMEOUT,
