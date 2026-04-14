@@ -393,24 +393,33 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
     except Exception:
         logger.warning("无法获取汇总数据")
         return
-    summary: dict[str, dict] = {}
+    summary: dict[int, dict] = {}
     for sword in comp_data.get("sword", {}).values():
         sword_id = sword.get("sword_id")
         if sword_id not in sword_ids:
             continue
         if sword.get("protect", 0) != 0:
             continue
-        key = str(sword_id)
-        if key not in summary:
-            summary[key] = {"lv7": 0, "incomplete": 0}
+        if sword_id not in summary:
+            summary[sword_id] = {"lv7": 0, "incomplete": []}
         if sword.get("ranbu_level", 0) >= TARGET_RANBU_LEVEL:
-            summary[key]["lv7"] += 1
+            summary[sword_id]["lv7"] += 1
         else:
-            summary[key]["incomplete"] += 1
+            summary[sword_id]["incomplete"].append(sword)
 
     total_lv7 = sum(v["lv7"] for v in summary.values())
-    total_incomplete = sum(v["incomplete"] for v in summary.values())
+    total_incomplete = sum(len(v["incomplete"]) for v in summary.values())
     logger.info(f"{title} — 已达乱舞{TARGET_RANBU_LEVEL}：{total_lv7} 把，未完成：{total_incomplete} 把")
-    for sid, counts in summary.items():
-        if counts["lv7"] or counts["incomplete"]:
-            logger.info(f"  sword_id={sid}：Lv{TARGET_RANBU_LEVEL}+ {counts['lv7']} 把，未完成 {counts['incomplete']} 把")
+    for sid, data in summary.items():
+        if not data["lv7"] and not data["incomplete"]:
+            continue
+        detail = ""
+        if data["incomplete"]:
+            # 显示未完成刀的当前等级和还差多少
+            parts = []
+            for s in data["incomplete"]:
+                lv = s.get("ranbu_level", 0)
+                needed = _swords_needed_for_target(s, TARGET_RANBU_LEVEL)
+                parts.append(f"Lv{lv}(差{needed}把)")
+            detail = f"，未完成：{', '.join(parts)}"
+        logger.info(f"  sword_id={sid}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
