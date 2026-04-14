@@ -234,14 +234,20 @@ def _feed_target(
 def run_composition_cycle(client: ToukenClient) -> None:
     """
     自动习合循环：领取短刀 → 习合 → 领更多 → 直到无刀可领+无素材。
-
-    优先级：
-      1. protect >= 1 且 ranbu_level < 7 的短刀 → 喂到乱舞10
-      2. protect == 0 的短刀 → 选 ranbu_level 最高的喂到乱舞7
+    Ctrl+C 中断时也打印汇总。
     """
-    logger.info("习合循环开始")
-
     known_tantou_sword_ids: set[int] = _load_tantou_db()
+    try:
+        _composition_loop(client, known_tantou_sword_ids)
+        _print_summary(client, known_tantou_sword_ids, "习合循环完成")
+    except KeyboardInterrupt:
+        _print_summary(client, known_tantou_sword_ids, "习合循环中断")
+        raise
+
+
+def _composition_loop(client: ToukenClient, known_tantou_sword_ids: set[int]) -> None:
+    """习合主循环"""
+    logger.info("习合循环开始")
 
     while True:
         # 1. 领取短刀
@@ -352,12 +358,19 @@ def run_composition_cycle(client: ToukenClient) -> None:
             logger.info("本轮领取了刀但无法习合（素材不足），继续领取...")
             continue
 
-    # 汇总
-    comp_data = _get_composition_data(client)
-    summary: dict[str, dict] = {}  # sword_id → {lv7+: N, incomplete: N}
+
+
+def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> None:
+    """打印习合汇总"""
+    try:
+        comp_data = _get_composition_data(client)
+    except Exception:
+        logger.warning("无法获取汇总数据")
+        return
+    summary: dict[str, dict] = {}
     for sword in comp_data.get("sword", {}).values():
         sword_id = sword.get("sword_id")
-        if sword_id not in known_tantou_sword_ids:
+        if sword_id not in sword_ids:
             continue
         if sword.get("protect", 0) != 0:
             continue
@@ -371,7 +384,7 @@ def run_composition_cycle(client: ToukenClient) -> None:
 
     total_lv7 = sum(v["lv7"] for v in summary.values())
     total_incomplete = sum(v["incomplete"] for v in summary.values())
-    logger.info(f"习合循环完成 — 已达乱舞{TARGET_RANBU_LEVEL}：{total_lv7} 把，未完成：{total_incomplete} 把")
+    logger.info(f"{title} — 已达乱舞{TARGET_RANBU_LEVEL}：{total_lv7} 把，未完成：{total_incomplete} 把")
     for sid, counts in summary.items():
         if counts["lv7"] or counts["incomplete"]:
             logger.info(f"  sword_id={sid}：Lv{TARGET_RANBU_LEVEL}+ {counts['lv7']} 把，未完成 {counts['incomplete']} 把")
