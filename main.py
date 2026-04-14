@@ -33,6 +33,18 @@ SERVER = os.getenv("SERVER", "w021")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = "YOUR_TELEGRAM_CHAT_ID"
 
+# ANSI 颜色
+_C = {
+    "green":   "\033[32m",
+    "yellow":  "\033[33m",
+    "blue":    "\033[34m",
+    "magenta": "\033[35m",
+    "cyan":    "\033[36m",
+    "reset":   "\033[0m",
+    "bold":    "\033[1m",
+    "dim":     "\033[2m",
+}
+
 MODES = {
     1: "爬楼地下城日常版（日常任务 + 地下城爬楼）",
     2: "日常任务版（重伤治疗 + 远征 + 演练 + 异去）",
@@ -59,9 +71,19 @@ def get_credentials() -> tuple[str, str]:
 
 
 def select_mode() -> int:
-    print("\n请选择运行版本：")
-    for num, desc in MODES.items():
-        print(f"  {num}. {desc}")
+    R = _C["reset"]
+    print(f"\n{_C['bold']}请选择运行版本：{R}")
+    print(f"  {_C['dim']}── 日常 ──{R}")
+    print(f"  {_C['green']}2. {MODES[2]}{R}")
+    print(f"  {_C['dim']}── 活动循环 ──{R}")
+    print(f"  {_C['yellow']}1. {MODES[1]}{R}")
+    print(f"  {_C['yellow']}3. {MODES[3]}{R}")
+    print(f"  {_C['dim']}── 普通地图循环 ──{R}")
+    print(f"  {_C['cyan']}4. {MODES[4]}{R}")
+    print(f"  {_C['cyan']}5. {MODES[5]}{R}")
+    print(f"  {_C['cyan']}6. {MODES[6]}{R}")
+    print(f"  {_C['dim']}── 其他 ──{R}")
+    print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     while True:
         raw = input("输入数字（1/2/3/4/5/6/7）: ").strip()
         if raw in ("1", "2", "3", "4", "5", "6", "7"):
