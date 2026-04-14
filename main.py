@@ -126,17 +126,70 @@ def run_daily(client: ToukenClient, state: dict) -> None:
     run_parallel_past(client)
 
 
+NEXT_MODE_TIMEOUT = 300  # 模式完成后等待下一个选择的秒数
+
+
+def _input_with_timeout(prompt: str, timeout: int) -> str | None:
+    """带超时的 input，超时返回 None（仅 macOS/Linux）"""
+    import signal
+
+    def _handler(signum, frame):
+        raise TimeoutError()
+
+    old_handler = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(timeout)
+    try:
+        result = input(prompt)
+        signal.alarm(0)
+        return result
+    except TimeoutError:
+        print()
+        return None
+    finally:
+        signal.signal(signal.SIGALRM, old_handler)
+        signal.alarm(0)
+
+
+def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
+    """执行指定模式"""
+    if mode == 1:
+        start_layer = int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
+        run_daily(client, state)
+        run_dungeon_climb(client, start_layer=start_layer)
+
+    elif mode == 2:
+        run_daily(client, state)
+
+    elif mode == 3:
+        layer_id = int(input("请输入循环层数（如 88）: ").strip())
+        run_daily(client, state)
+        run_dungeon_floor_loop(client, layer_id=layer_id)
+
+    elif mode == 4:
+        run_daily(client, state)
+        run_sortie_4_4_loop(client)
+
+    elif mode == 5:
+        run_daily(client, state)
+        run_sortie_4_3_loop(client)
+
+    elif mode == 6:
+        run_daily(client, state)
+        run_sortie_7_3_loop(client)
+
+    elif mode == 7:
+        run_composition_cycle(client)
+
+    elif mode == 8:
+        run_dismantle_cycle(client)
+
+    elif mode == 9:
+        run_sword_manager(client)
+
+
 def main():
     sword, initial_t = get_credentials()
     mode = select_mode()
-
-    # 需要层数的模式提前收集输入
-    layer_id: int | None = None
-    start_layer: int | None = None
-    if mode == 1:
-        start_layer = int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
-    elif mode == 3:
-        layer_id = int(input("请输入循环层数（如 88）: ").strip())
 
     with ToukenClient(sword=sword, uid=UID, server=SERVER) as client:
         client._csrf_token = initial_t
@@ -155,46 +208,31 @@ def main():
             f"冷却剂:{res['coolant']}  砥石:{res['file']}"
         )
 
-        if mode == 1:
-            # 爬楼地下城日常版
-            run_daily(client, state)
-            run_dungeon_climb(client, start_layer=start_layer)
+        while True:
+            try:
+                _run_mode(client, mode, state)
+            except KeyboardInterrupt:
+                logger.info("用户中断（Ctrl+C），当前模式结束")
 
-        elif mode == 2:
-            # 日常任务版
-            run_daily(client, state)
-
-        elif mode == 3:
-            # 循环地下城日常版
-            run_daily(client, state)
-            run_dungeon_floor_loop(client, layer_id=layer_id)
-
-        elif mode == 4:
-            # 循环4-4版（重伤治疗 + 远征 + 演练 + 4-4无限循环）
-            run_daily(client, state)
-            run_sortie_4_4_loop(client)
-
-        elif mode == 5:
-            # 循环4-3版（重伤治疗 + 远征 + 演练 + 4-3无限循环）
-            run_daily(client, state)
-            run_sortie_4_3_loop(client)
-
-        elif mode == 6:
-            # 循环7-3版（重伤治疗 + 远征 + 演练 + 7-3无限循环）
-            run_daily(client, state)
-            run_sortie_7_3_loop(client)
-
-        elif mode == 7:
-            # 习合模式（领取短刀 + 自动习合到乱舞7）
-            run_composition_cycle(client)
-
-        elif mode == 8:
-            # 刀解模式（领取非短刀 + 自动刀解释放刀位）
-            run_dismantle_cycle(client)
-
-        elif mode == 9:
-            # 综合管理（习合+刀解一体化）
-            run_sword_manager(client)
+            # 模式完成，等待选择下一个
+            logger.info(f"模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
+            raw = _input_with_timeout(
+                f"\n输入下一个模式编号（1-9），或回车退出: ",
+                NEXT_MODE_TIMEOUT,
+            )
+            if raw is None:
+                logger.info("超时，程序退出")
+                break
+            raw = raw.strip()
+            if not raw:
+                logger.info("用户选择退出")
+                break
+            if raw in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+                mode = int(raw)
+                logger.info(f"切换到模式：{MODES[mode]}")
+            else:
+                logger.info("无效输入，程序退出")
+                break
 
 
 def _beep(sound: str = "Basso") -> None:
