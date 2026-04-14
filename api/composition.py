@@ -104,7 +104,7 @@ def _receive_tantou(client: ToukenClient) -> tuple[int, set[int]]:
     all_sids = list(receive_items.keys())
     batch_sids = all_sids[:MAX_RECEIVE_PER_BATCH]
 
-    logger.info(f"受取箱有 {len(all_sids)} 把短刀（{len(tantou_sword_ids)} 种），本次领取 {len(batch_sids)} 把")
+    logger.info(f"受取箱显示 {len(all_sids)} 把短刀（{len(tantou_sword_ids)} 种），本次领取 {len(batch_sids)} 把")
 
     # 领取
     serial_ids_str = ",".join(batch_sids)

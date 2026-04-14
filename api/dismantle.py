@@ -52,7 +52,7 @@ def _receive_non_tantou(client: ToukenClient) -> int:
     all_sids = list(receive_items.keys())
     batch_sids = all_sids[:MAX_RECEIVE_PER_BATCH]
 
-    logger.info(f"受取箱有 {len(all_sids)} 把非短刀，本次领取 {len(batch_sids)} 把")
+    logger.info(f"受取箱显示 {len(all_sids)} 把非短刀，本次领取 {len(batch_sids)} 把")
 
     serial_ids_str = ",".join(batch_sids)
     resp = client._post("receive/get", extra={
