@@ -216,8 +216,12 @@ def main():
 
             # 模式完成，等待选择下一个
             logger.info(f"模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
+            R = _C["reset"]
+            print(f"\n{_C['bold']}可选模式：{R}")
+            for num, desc in MODES.items():
+                print(f"  {num}. {desc}")
             raw = _input_with_timeout(
-                f"\n输入下一个模式编号（1-9），或回车退出: ",
+                f"\n输入模式编号（1-9），或回车退出: ",
                 NEXT_MODE_TIMEOUT,
             )
             if raw is None:
