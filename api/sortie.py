@@ -25,6 +25,13 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import battle_sleep, FORMATION_ID, set_sword, remove_sword, get_party_slots, recover_sword_fatigue
+
+# 阵型克制表：enemy_formation → counter_formation
+# 鋒矢(1)→逆行(3), 横隊(2)→鶴翼(5), 逆行(3)→方圓(6),
+# 鱼鳞(4)→鋒矢(1), 鶴翼(5)→鱼鳞(4), 方圓(6)→横隊(2)
+COUNTER_FORMATION: dict[int, int] = {
+    1: 3, 2: 5, 3: 6, 4: 1, 5: 4, 6: 2,
+}
 from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, is_heavily_injured
 from .expedition import quick_expedition_check
 
@@ -42,11 +49,18 @@ YORAIFUDA_REST_SHORT_SECONDS:    int = 5   # 新获得 < 10 时休息时长
 YORAIFUDA_REST_LONG_SECONDS:     int = 10  # 新获得 >= 10 时休息时长
 
 # ── 4-3 循环配置（队伍4，固定休息，不检查依赖札）────────────
-SORTIE_43_PARTY_NO:              int = 4
+SORTIE_43_PARTY_NO:              int = 3
 SORTIE_43_EPISODE_ID:            int = 4
 SORTIE_43_FIELD_ID:              int = 3   # 4-3
 SORTIE_43_CHECK_INTERVAL:        int = 15
 SORTIE_43_REST_SECONDS:          int = 5   # 固定休息时长
+
+# ── 7-3 循环配置（队伍3，固定休息，不检查依赖札）────────────
+SORTIE_73_PARTY_NO:              int = 3
+SORTIE_73_EPISODE_ID:            int = 7
+SORTIE_73_FIELD_ID:              int = 3   # 7-3
+SORTIE_73_CHECK_INTERVAL:        int = 15
+SORTIE_73_REST_SECONDS:          int = 5   # 固定休息时长
 
 
 # ── 白山移除（4-4 出阵前调用）────────────────────────────────
@@ -171,15 +185,13 @@ def _run_single_sortie(
     party_no: int,
     episode_id: int,
     field_id: int,
+    skip_last_battle: bool = False,
 ) -> None:
     """
     执行一次出阵（不含气力/重伤检查）。
-    战斗场数由 sally/startup 的 history 动态决定。
+    skip_last_battle=True 时，最终节点（is_finish=True）不战斗直接归城，减少刀装消耗。
     """
-    client._post("sally/sally", extra={
-        "episode_id": episode_id,
-        "field_id":   field_id,
-    })
+    client._post("sally")
     battle_sleep()
 
     client._post("sally/sally", extra={
@@ -190,38 +202,55 @@ def _run_single_sortie(
     battle_sleep()
 
     startup_resp = client._post("sally/startup")
-    history = startup_resp.get("history", [])
-    battle_count = max(len(history) // 2, 1)
-    logger.info(f"  本次路线：{battle_count} 场战斗")
     battle_sleep()
 
-    for i in range(1, battle_count + 1):
-        logger.debug(f"  节点 {i}/{battle_count}")
+    battle_no = 0
+    node_no = 0
+    while True:
         forward_resp = client._post("sally/forward", extra={"direction": 0})
         battle_sleep()
 
+        forward_status = forward_resp.get("status", 0)
+        is_finish      = forward_resp.get("is_finish", False)
+        item_effect    = forward_resp.get("item_effect", 0)
+        node_no += 1
+
         # 队长重伤时服务器返回 status≠0，无法继续出阵
-        if forward_resp.get("status", 0) != 0:
+        if forward_status != 0:
             logger.warning(
-                f"  节点 {i}：forward status={forward_resp.get('status')}，"
+                f"  节点 {node_no}：forward status={forward_status}，"
                 f"停止出阵（队长重伤）"
             )
             break
 
-        client._post("battle/battle", extra={"formation_id": FORMATION_ID})
-        battle_sleep()
-
-        # 道中重伤检查：非最终节点战斗后，有重伤则立刻停止，不进入下一节点
-        # 注意：conquest 无 hp/hp_max 字段，必须用 getpartyinfo 才能检测到重伤
-        if i < battle_count:
-            pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+        # 物资节点，无需战斗
+        if item_effect != 0:
+            logger.debug(f"  节点 {node_no}：物资节点（item_effect={item_effect}），跳过战斗")
+        elif skip_last_battle and is_finish:
+            logger.info(f"  节点 {node_no}：最终节点，跳过战斗直接归城（skip_last_battle）")
+            break
+        else:
+            enemy_formation = (forward_resp.get("scout") or {}).get("formation_id", 0)
+            formation_id = COUNTER_FORMATION.get(enemy_formation, FORMATION_ID)
+            battle_no += 1
+            logger.debug(f"  节点 {node_no}：战斗 {battle_no}（formation={formation_id}）is_finish={is_finish}")
+            client._post("battle/battle", extra={"formation_id": formation_id})
             battle_sleep()
-            injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
-            if injured:
-                logger.warning(
-                    f"  节点{i}后检测到重伤（serial_id={injured}），停止出阵"
-                )
-                break
+
+            # 道中重伤检查：非最终节点战斗后，有重伤则立刻停止
+            if not is_finish:
+                pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+                battle_sleep()
+                injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
+                if injured:
+                    logger.warning(
+                        f"  节点 {node_no} 后检测到重伤（serial_id={injured}），停止出阵"
+                    )
+                    break
+
+        if is_finish:
+            logger.info(f"  出阵完成（{battle_no} 场战斗，共 {node_no} 个节点）")
+            break
 
     client.get_game_state()
     logger.info("  出阵结束，已回本丸")
@@ -297,4 +326,33 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
         if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
             logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
             time.sleep(SORTIE_43_REST_SECONDS)
+            logger.info("  休息结束，继续新一轮...")
+
+
+def run_sortie_7_3_loop(client: ToukenClient) -> None:
+    """
+    队伍3 无限循环刷 7-3。
+    每 SORTIE_73_CHECK_INTERVAL 次固定休息 SORTIE_73_REST_SECONDS 秒，不检查依赖札。
+    按 Ctrl+C 手动停止。
+    """
+    total_runs = 0
+    logger.info(
+        f"7-3 循环开始（队伍{SORTIE_73_PARTY_NO}），"
+        f"每 {SORTIE_73_CHECK_INTERVAL} 次休息 {SORTIE_73_REST_SECONDS}s"
+    )
+
+    while True:
+        adjust_captain_for_fatigue(client, SORTIE_73_PARTY_NO)
+        run_repair_check(client, SORTIE_73_PARTY_NO)
+
+        total_runs += 1
+        logger.info(f"[第 {total_runs} 次] 出阵 7-3（队伍{SORTIE_73_PARTY_NO}）...")
+        _run_single_sortie(client, SORTIE_73_PARTY_NO, SORTIE_73_EPISODE_ID, SORTIE_73_FIELD_ID, skip_last_battle=True)
+
+        _check_and_recover_fatigue(client, SORTIE_73_PARTY_NO)
+        quick_expedition_check(client)
+
+        if total_runs % SORTIE_73_CHECK_INTERVAL == 0:
+            logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
+            time.sleep(SORTIE_73_REST_SECONDS)
             logger.info("  休息结束，继续新一轮...")

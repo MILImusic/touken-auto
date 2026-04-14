@@ -124,6 +124,33 @@
   返回：JSON（可能含 script 字段用于日常对话）
   注意：调用此端点会重置 HP 到本丸值
 
+■ sally/sally
+  操作：选择地图并出阵（进入出阵前必须先调用 sally）
+  参数：episode_id, field_id, party_no（三个一起传，不可分两次调用）
+  返回：t
+  注意：episode_id/field_id 分别对应章节和地图编号（如 7-3 = episode_id=7, field_id=3）
+        部分章节（如 episode 7）不接受缺少 party_no 的调用（500 Internal Error）
+
+■ sally/startup
+  操作：出阵初始化（sally/sally 之后调用）
+  返回：history（路线信息）, t
+
+■ sally/forward
+  操作：普通出阵中前进一个节点
+  参数：direction=0
+  返回：
+    status       ← 0=正常，≠0=队长重伤无法继续
+    is_finish    ← true=最终节点
+    item_effect  ← ≠0 为物资节点（无需战斗），=0 为战斗节点
+    formation_id ← 始终为 None（普通出阵不提供推荐阵型）
+    scout.formation_id ← 敌方阵型（0=未知，1~6=具体阵型）
+    scout.enemy  ← 敌方单位 ID 列表
+    t
+  与 sally/eventforward 的关键区别：
+    - eventforward 返回服务器推荐阵型（formation_id 有值），可直接使用
+    - forward 不返回推荐阵型，需根据 scout.formation_id（敌方阵型）自行选择克制阵型
+    - scout.formation_id=0 时敌方阵型未知，默认鱼鳞阵(4)
+
 ■ home/leave?serial_id=N&is_leave=0
   操作：拒绝访客修行申请
   返回：t
@@ -246,6 +273,57 @@ Q3: eventsally status=2 的真实原因？
 ■ sword.status 字段
   已知值 3 同时出现在：重伤刀（HP 14/55）和满血刀（HP 53/53）。
   当前未使用此字段做重伤判断，意义待进一步确认。
+
+■ receive/list
+  操作：打开受取箱（可按筛选条件查看）
+  参数：sort_type, order, item_type, sword_type, sword, t
+    - sort_type=1 默认排序, sort_type=2 按顺序排序
+    - item_type=0 只看刀剑
+    - sword_type=1 只看短刀
+  返回：JSON（Content-Type 标记为 text/html，但实际是 JSON）
+    receive          ← {serial_id: {serial_id, item_type, item_id, name, ...}}
+    total_count      ← 符合筛选条件的总数
+    t
+  注意：receive 中的 serial_id 是受取箱内的 ID，领取后变为刀剑的 serial_id
+        item_id 对应 sword_id（如 11=今剣）
+        item_type=2 表示刀剑
+
+■ receive/get
+  操作：从受取箱领取刀剑
+  参数：serial_ids（逗号分隔，最多100个）, sort_type, order, item_type, sword_type, sword, t
+  返回：JSON
+    serial_ids[]     ← 领取到的刀剑 serial_id 列表（已变为正式刀剑 serial_id）
+    item             ← 当前道具库存
+    resource         ← 当前资源
+    is_time_over     ← 是否超时
+    t
+  注意：serial_ids 从 receive/list 的 receive 字段提取
+        不传 serial_ids 时返回空列表（不会自动选择）
+
+■ composition/index
+  操作：打开强化/习合界面
+  参数：sword, t
+  返回：JSON
+    composition.sword    ← 所有刀剑完整数据（含 ranbu_level, ranbu_exp, protect, rarity 等）
+    composition.party    ← 队伍数据（含 slot.serial_id）
+    composition.equip    ← 装备数据
+    composition.artifact ← 宝物数据
+    t
+  注意：这是获取 ranbu_level/ranbu_exp 最可靠的端点
+
+■ composition/union
+  操作：习合（将素材刀喂给目标刀提升乱舞等级）
+  参数：base_serial_id（目标刀）, material_serial_id（逗号分隔，最多30个素材刀）, sword, t
+  返回：text/html（无 JSON）
+  注意：每把同刀素材固定 +100 ranbu_exp
+        习合后需调 composition/index 确认 ranbu_level 变化
+
+■ 习合经验值表（2026-04-14 确认）
+  每把同刀 +100 ranbu_exp（固定值，与素材等级/乱舞等级无关）
+  到达乱舞 Lv7 累计所需同刀数：
+    ★1：57把（5700 exp）  ★2：52把（5200 exp）
+    ★3：38把（3800 exp）  ★4：24把（2400 exp）
+    ★5：17把（1700 exp）
 
 ■ 白山吉光编成变更（2026-04-04）
   部隊1 为专属治疗队，白山吉光常驻槽1，平时只放白山（槽2-6 空置）。

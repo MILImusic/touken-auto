@@ -3,27 +3,35 @@
 
 流程版本：
   1. 爬楼地下城日常版 —— 日常任务 + 地下城爬楼（爬至目标层）
-  2. 日常任务版       —— 仅日常任务（重伤治疗 + 远征 + 演练）
+  2. 日常任务版       —— 仅日常任务（重伤治疗 + 远征 + 演练 + 异去）
   3. 循环地下城日常版 —— 日常任务 + 地下城单层循环
+  4. 循环4-4版       —— 日常任务 + 4-4无限循环（队伍2，检查依赖札）
+  5. 循环4-3版       —— 日常任务 + 4-3无限循环（队伍4）
+  6. 循环7-3版       —— 日常任务 + 7-3无限循环（队伍3，跳过最终节点）
 """
 
 import os
 import time
+import traceback
 from dotenv import load_dotenv
 from loguru import logger
+import httpx
 
 from api.client import ToukenClient
 from api.expedition import run_expedition_cycle
 from api.repair import run_all_repairs
+from api.composition import run_composition_cycle
 from api.practice import run_practice_cycle
 from api.dungeon import run_dungeon_climb, run_dungeon_floor_loop
-from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop
+from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop, run_sortie_7_3_loop
 from api.parallel_past import run_parallel_past
 
 load_dotenv()
 
 UID    = os.getenv("UID", "14052501")
 SERVER = os.getenv("SERVER", "w021")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = "YOUR_TELEGRAM_CHAT_ID"
 
 MODES = {
     1: "爬楼地下城日常版（日常任务 + 地下城爬楼）",
@@ -31,6 +39,8 @@ MODES = {
     3: "循环地下城日常版（日常任务 + 地下城单层循环）",
     4: "循环4-4版（日常任务 + 4-4无限循环，每15次检查依赖札）",
     5: "循环4-3版（日常任务 + 4-3无限循环，队伍4，每15次固定休息）",
+    6: "循环7-3版（日常任务 + 7-3无限循环，队伍3，每15次固定休息）",
+    7: "习合模式（领取短刀 + 自动习合到乱舞7）",
 }
 
 
@@ -53,10 +63,10 @@ def select_mode() -> int:
     for num, desc in MODES.items():
         print(f"  {num}. {desc}")
     while True:
-        raw = input("输入数字（1/2/3/4/5）: ").strip()
-        if raw in ("1", "2", "3", "4", "5"):
+        raw = input("输入数字（1/2/3/4/5/6/7）: ").strip()
+        if raw in ("1", "2", "3", "4", "5", "6", "7"):
             return int(raw)
-        print("  请输入 1、2、3、4 或 5")
+        print("  请输入 1～7")
 
 
 def handle_leave_requests(client: ToukenClient, state: dict) -> None:
@@ -141,12 +151,38 @@ def main():
             run_daily(client, state)
             run_sortie_4_3_loop(client)
 
+        elif mode == 6:
+            # 循环7-3版（重伤治疗 + 远征 + 演练 + 7-3无限循环）
+            run_daily(client, state)
+            run_sortie_7_3_loop(client)
+
+        elif mode == 7:
+            # 习合模式（领取短刀 + 自动习合到乱舞7）
+            run_composition_cycle(client)
+
 
 def _beep(sound: str = "Basso") -> None:
     """播放 macOS 系统提示音（不阻塞，失败静默）"""
     import subprocess
     try:
         subprocess.Popen(["afplay", f"/System/Library/Sounds/{sound}.aiff"])
+    except Exception:
+        pass
+
+
+def _notify_telegram(error: Exception) -> None:
+    """报错时发送 Telegram 通知，失败静默"""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    try:
+        tb = traceback.format_exception(error)
+        tb_short = "".join(tb[-3:])[:1000]
+        text = f"⚠ 刀剣乱舞脚本异常退出\n\n{type(error).__name__}: {error}\n\n{tb_short}"
+        httpx.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            timeout=10,
+        )
     except Exception:
         pass
 
@@ -159,4 +195,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"程序异常退出：{e}")
         _beep("Basso")
+        _notify_telegram(e)
         raise

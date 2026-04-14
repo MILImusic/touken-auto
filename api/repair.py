@@ -36,6 +36,11 @@ HAKUSAN_FATIGUE_HEAL_MIN: int = 40  # 每次治疗后白山气力下限（低于
 HAKUSAN_FATIGUE_MAX: int = 100
 MAX_HEAL_ROUNDS:     int = 10
 
+# 气力手动追踪（getpartyinfo 返回值不可靠）
+HAKUSAN_HEAL_COST:     int = 16  # 每次治疗1-1净消耗（含神技-20，队长S+4等）
+HAKUSAN_RECOVERY_GAIN: int = 20  # 每次恢复1-1净增加（实测值，无神技触发）
+_hakusan_fatigue: int = HAKUSAN_FATIGUE_MAX  # 模块级追踪器，初始假设满气力
+
 HEAVY_INJURY_RATIO: float = 0.30  # 游戏实测：HP ≤ 30% 为重伤（官方未公开精确值，玩家实测约 30~31%）
 
 ALL_PARTY_NOS = range(1, 6)
@@ -191,55 +196,35 @@ def _restore_equip(client: ToukenClient, serial_id: int, snapshot: dict, skip_it
 
 def ensure_hakusan_fatigue(client: ToukenClient, min_fatigue: int = HAKUSAN_FATIGUE_MIN) -> None:
     """
-    检查白山吉光气力，若 < min_fatigue，
-    直接用 部隊1（白山常驻槽1）刷 1-1 恢复，不改变队伍编成。
-    conquest 数据不含准确气力，改用 party/getpartyinfo 读取。
-    min_fatigue 默认 HAKUSAN_FATIGUE_MIN（25）；治疗循环中调用时传 HAKUSAN_FATIGUE_HEAL_MIN（40）。
+    检查白山吉光气力，若 < min_fatigue，刷 1-1 恢复。
+    getpartyinfo 返回的气力值不可靠（始终100），改用手动追踪。
+    每次治疗1-1消耗 HAKUSAN_HEAL_COST，每次恢复1-1增加 HAKUSAN_RECOVERY_GAIN。
     """
-    conquest_data = client.get_conquest_data()
-    hakusan_sid = find_hakusan_serial_id(conquest_data)
+    global _hakusan_fatigue
 
-    if hakusan_sid is None:
-        logger.warning("找不到白山吉光，跳过气力检查")
+    if _hakusan_fatigue >= min_fatigue:
+        logger.debug(f"白山吉光气力（追踪值）={_hakusan_fatigue}，无需恢复")
         return
 
-    # conquest 气力数据不准，用 party/getpartyinfo 读取白山当前气力
-    # 白山固定驻守 HAKUSAN_PARTY_NO（部隊1），直接查询，无需扫描所有队伍
-    hakusan_party_resp = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
-    hakusan_party_swords = hakusan_party_resp.get("sword", {})
-    fatigue = HAKUSAN_FATIGUE_MAX
-    for sid_str, sword_data in hakusan_party_swords.items():
-        try:
-            if int(sid_str) == hakusan_sid:
-                fatigue = sword_data.get("fatigue", HAKUSAN_FATIGUE_MAX)
-                break
-        except (ValueError, TypeError):
-            pass
+    logger.info(f"白山吉光气力（追踪值）={_hakusan_fatigue} < {min_fatigue}，开始恢复...")
 
-    if fatigue >= min_fatigue:
-        logger.debug(f"白山吉光气力={fatigue}，无需恢复")
-        return
-
-    logger.info(f"白山吉光(sid={hakusan_sid})气力={fatigue} < {min_fatigue}，开始恢复...")
-
-    max_rounds = 15
+    max_rounds = 25
     for round_no in range(1, max_rounds + 1):
-        p2_resp = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
-        current_fatigue = HAKUSAN_FATIGUE_MAX
-        for sid_str, sd in p2_resp.get("sword", {}).items():
-            try:
-                if int(sid_str) == hakusan_sid:
-                    current_fatigue = sd.get("fatigue", HAKUSAN_FATIGUE_MAX)
-                    break
-            except (ValueError, TypeError):
-                pass
-        logger.info(f"  round {round_no}：白山吉光气力={current_fatigue}")
-        if current_fatigue >= HAKUSAN_FATIGUE_MAX:
-            logger.info("  白山吉光气力已恢复至100")
+        if _hakusan_fatigue >= HAKUSAN_FATIGUE_MAX:
+            logger.info(f"  白山吉光气力已恢复至{_hakusan_fatigue}（{round_no - 1}轮）")
             break
+        logger.info(f"  round {round_no}：气力={_hakusan_fatigue}，跑1-1恢复中...")
         run_battle_1_1(client, HAKUSAN_PARTY_NO)
+        _hakusan_fatigue = min(_hakusan_fatigue + HAKUSAN_RECOVERY_GAIN, HAKUSAN_FATIGUE_MAX)
     else:
-        logger.warning(f"白山吉光气力恢复超出{max_rounds}轮")
+        logger.warning(f"白山吉光气力恢复超出{max_rounds}轮，当前追踪值={_hakusan_fatigue}")
+
+
+def record_heal_cost() -> None:
+    """治疗1-1后调用，扣除白山气力消耗"""
+    global _hakusan_fatigue
+    _hakusan_fatigue = max(_hakusan_fatigue - HAKUSAN_HEAL_COST, 0)
+    logger.debug(f"白山吉光气力消耗 -{HAKUSAN_HEAL_COST}，追踪值={_hakusan_fatigue}")
 
 
 # ── 核心入口 ─────────────────────────────────────────────────
@@ -412,6 +397,7 @@ def run_all_repairs(
 
         # 出阵 1-1，仅一轮；治疗后仍重伤视为 bug，终止程序
         run_battle_1_1(client, HAKUSAN_PARTY_NO)
+        record_heal_cost()
         # conquest 无 HP 字段，必须用 getpartyinfo 验证治疗结果
         heal_pi = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
         battle_sleep()
@@ -428,10 +414,9 @@ def run_all_repairs(
             )
         logger.info(f"  serial_id={injured_sid} 治疗成功（HP={hp_now}/{hp_max_now}）")
 
-        # 治疗后检查白山气力，低于 HAKUSAN_FATIGUE_HEAL_MIN 则立即补满再治下一把
-        hakusan_fatigue = heal_pi.get("sword", {}).get(str(hakusan_sid), {}).get("fatigue", HAKUSAN_FATIGUE_MAX)
-        if hakusan_fatigue < HAKUSAN_FATIGUE_HEAL_MIN:
-            logger.info(f"  白山吉光治疗后气力={hakusan_fatigue} < {HAKUSAN_FATIGUE_HEAL_MIN}，先补满再继续...")
+        # 治疗后检查白山气力（追踪值），低于 HAKUSAN_FATIGUE_HEAL_MIN 则立即补满再治下一把
+        if _hakusan_fatigue < HAKUSAN_FATIGUE_HEAL_MIN:
+            logger.info(f"  白山吉光治疗后气力（追踪值）={_hakusan_fatigue} < {HAKUSAN_FATIGUE_HEAL_MIN}，先补满再继续...")
             ensure_hakusan_fatigue(client, min_fatigue=HAKUSAN_FATIGUE_HEAL_MIN)
 
         # 御守归还白山（setitem 会自动从重伤刀转回白山）
