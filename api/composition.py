@@ -507,3 +507,6 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
                 logger.info(f"    {name}：乱舞Lv{lv}（到Lv10差{needed}把）")
         if maxed:
             logger.info(f"  保护刀（已满级Lv10）：{len(maxed)} 把")
+            for s in maxed:
+                name = get_sword_name(s.get("sword_id"))
+                logger.info(f"    {name}：乱舞Lv10 ✓")
