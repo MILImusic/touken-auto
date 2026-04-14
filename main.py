@@ -90,11 +90,15 @@ def select_mode() -> int:
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     print(f"  {_C['magenta']}8. {MODES[8]}{R}")
     print(f"  {_C['magenta']}9. {MODES[9]}{R}")
+    print(f"  {_C['dim']}支持接力：如 9 3:88 表示先跑模式9再跑模式3(88层){R}")
     while True:
-        raw = input("输入数字（1-9）: ").strip()
-        if raw in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
-            return int(raw)
-        print("  请输入 1～9")
+        raw = input("输入模式: ").strip()
+        if not raw:
+            continue
+        queue = _parse_mode_queue(raw)
+        if queue:
+            return queue
+        print("  格式错误，示例：9 3:88 或单个数字如 3")
 
 
 def handle_leave_requests(client: ToukenClient, state: dict) -> None:
@@ -129,6 +133,41 @@ def run_daily(client: ToukenClient, state: dict) -> None:
 NEXT_MODE_TIMEOUT = 300  # 模式完成后等待下一个选择的秒数
 
 
+def _parse_mode_queue(raw: str) -> list[tuple[int, dict]] | None:
+    """
+    解析模式队列输入。
+    格式：'9 3:88' → [(9, {}), (3, {'layer_id': 88})]
+           '3:88'  → [(3, {'layer_id': 88})]
+           '7'     → [(7, {})]
+           '1:50'  → [(1, {'start_layer': 50})]
+    """
+    queue = []
+    for part in raw.split():
+        if ":" in part:
+            mode_str, param_str = part.split(":", 1)
+        else:
+            mode_str, param_str = part, ""
+
+        if mode_str not in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+            return None
+
+        mode = int(mode_str)
+        params = {}
+        if param_str:
+            try:
+                val = int(param_str)
+                if mode == 1:
+                    params["start_layer"] = val
+                elif mode == 3:
+                    params["layer_id"] = val
+            except ValueError:
+                return None
+
+        queue.append((mode, params))
+
+    return queue if queue else None
+
+
 def _input_with_timeout(prompt: str, timeout: int) -> str | None:
     """带超时的 input，超时返回 None（仅 macOS/Linux）"""
     import signal
@@ -153,9 +192,10 @@ def _input_with_timeout(prompt: str, timeout: int) -> str | None:
 _daily_done = False
 
 
-def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
-    """执行指定模式"""
+def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None = None) -> None:
+    """执行指定模式，params 为接力模式预设的参数"""
     global _daily_done
+    params = params or {}
 
     def _ensure_daily():
         global _daily_done
@@ -166,7 +206,7 @@ def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
             logger.info("日常任务本次 session 已执行，跳过")
 
     if mode == 1:
-        start_layer = int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
+        start_layer = params.get("start_layer") or int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
         _ensure_daily()
         run_dungeon_climb(client, start_layer=start_layer)
 
@@ -174,7 +214,7 @@ def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
         _ensure_daily()
 
     elif mode == 3:
-        layer_id = int(input("请输入循环层数（如 88）: ").strip())
+        layer_id = params.get("layer_id") or int(input("请输入循环层数（如 88）: ").strip())
         _ensure_daily()
         run_dungeon_floor_loop(client, layer_id=layer_id)
 
@@ -200,13 +240,48 @@ def _run_mode(client: ToukenClient, mode: int, state: dict) -> None:
         run_sword_manager(client)
 
 
+def _send_mode_summary(mode: int, error: Exception | None = None) -> None:
+    """模式完成后发 Telegram 汇总"""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    try:
+        status = f"异常：{error}" if error else "正常完成"
+        text = f"模式 {mode}（{MODES.get(mode, '未知')}）{status}"
+        import httpx as _httpx
+        _httpx.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def _show_mode_menu() -> None:
+    """显示带颜色的模式列表"""
+    R = _C["reset"]
+    print(f"\n{_C['bold']}可选模式：{R}")
+    print(f"  {_C['dim']}── 日常 ──{R}")
+    print(f"  {_C['green']}2. {MODES[2]}{R}")
+    print(f"  {_C['dim']}── 活动循环 ──{R}")
+    print(f"  {_C['yellow']}1. {MODES[1]}{R}")
+    print(f"  {_C['yellow']}3. {MODES[3]}{R}")
+    print(f"  {_C['dim']}── 普通地图循环 ──{R}")
+    print(f"  {_C['cyan']}4. {MODES[4]}{R}")
+    print(f"  {_C['cyan']}5. {MODES[5]}{R}")
+    print(f"  {_C['cyan']}6. {MODES[6]}{R}")
+    print(f"  {_C['dim']}── 其他 ──{R}")
+    print(f"  {_C['magenta']}7. {MODES[7]}{R}")
+    print(f"  {_C['magenta']}8. {MODES[8]}{R}")
+    print(f"  {_C['magenta']}9. {MODES[9]}{R}")
+
+
 def main():
     sword, initial_t = get_credentials()
-    mode = select_mode()
+    queue = select_mode()  # 返回 [(mode, params), ...]
 
     with ToukenClient(sword=sword, uid=UID, server=SERVER) as client:
         client._csrf_token = initial_t
-        logger.info(f"Token 已就绪，运行模式：{MODES[mode]}")
 
         state = client.get_game_state()
         if state.get("status", 0) != 0:
@@ -221,36 +296,32 @@ def main():
             f"冷却剂:{res['coolant']}  砥石:{res['file']}"
         )
 
-        while True:
-            try:
-                _run_mode(client, mode, state)
-            except KeyboardInterrupt:
-                logger.info("用户中断（Ctrl+C），当前模式结束")
-            except Exception as e:
-                logger.error(f"模式异常退出：{e}")
-                _notify_telegram(e)
+        if len(queue) > 1:
+            logger.info(f"接力模式：{' → '.join(MODES.get(m, str(m)) for m, _ in queue)}")
 
-            # 模式完成，等待选择下一个
-            logger.info(f"模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
-            print()
-            # 复用带颜色的模式列表
-            R = _C["reset"]
-            print(f"{_C['bold']}可选模式：{R}")
-            print(f"  {_C['dim']}── 日常 ──{R}")
-            print(f"  {_C['green']}2. {MODES[2]}{R}")
-            print(f"  {_C['dim']}── 活动循环 ──{R}")
-            print(f"  {_C['yellow']}1. {MODES[1]}{R}")
-            print(f"  {_C['yellow']}3. {MODES[3]}{R}")
-            print(f"  {_C['dim']}── 普通地图循环 ──{R}")
-            print(f"  {_C['cyan']}4. {MODES[4]}{R}")
-            print(f"  {_C['cyan']}5. {MODES[5]}{R}")
-            print(f"  {_C['cyan']}6. {MODES[6]}{R}")
-            print(f"  {_C['dim']}── 其他 ──{R}")
-            print(f"  {_C['magenta']}7. {MODES[7]}{R}")
-            print(f"  {_C['magenta']}8. {MODES[8]}{R}")
-            print(f"  {_C['magenta']}9. {MODES[9]}{R}")
+        while True:
+            # 执行队列中的模式
+            for mode, params in queue:
+                logger.info(f"运行模式：{MODES.get(mode, str(mode))}")
+                error = None
+                try:
+                    _run_mode(client, mode, state, params)
+                except KeyboardInterrupt:
+                    logger.info("用户中断（Ctrl+C），当前模式结束")
+                except Exception as e:
+                    error = e
+                    logger.error(f"模式异常退出：{e}")
+                    _notify_telegram(e)
+
+                # 接力模式中每个模式完成发 Telegram
+                if len(queue) > 1:
+                    _send_mode_summary(mode, error)
+
+            # 队列执行完，等待选择下一个
+            logger.info(f"全部模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
+            _show_mode_menu()
             raw = _input_with_timeout(
-                f"\n输入模式编号（1-9），或回车退出: ",
+                f"\n输入模式（支持接力如 9 3:88），或回车退出: ",
                 NEXT_MODE_TIMEOUT,
             )
             if raw is None:
@@ -260,9 +331,9 @@ def main():
             if not raw:
                 logger.info("用户选择退出")
                 break
-            if raw in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
-                mode = int(raw)
-                logger.info(f"切换到模式：{MODES[mode]}")
+            new_queue = _parse_mode_queue(raw)
+            if new_queue:
+                queue = new_queue
             else:
                 logger.info("无效输入，程序退出")
                 break
