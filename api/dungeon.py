@@ -90,8 +90,16 @@ def _sort_fatigued_swords_to_front(client: ToukenClient) -> None:
         f"队伍3有 {len(low_swords)} 把刀气力 <{DUNGEON_FATIGUE_THRESHOLD}，重排至前列..."
     )
 
-    # 槽1队长无法 removesword。若槽1需要换人，先用 setsword 替换（会触发 swap）。
     current_slot1_sid = slots.get(1)
+
+    # 优化：只有1把低气力刀且不在槽1 → 直接 swap，1次API代替12次
+    if len(low_swords) == 1 and new_sids[0] != current_slot1_sid:
+        set_sword(client, DUNGEON_PARTY_NO, 1, new_sids[0])
+        battle_sleep()
+        logger.info("队伍3重排完成（单刀swap）")
+        return
+
+    # 多把刀需要重排：全队拆装
     if new_sids[0] != current_slot1_sid:
         set_sword(client, DUNGEON_PARTY_NO, 1, new_sids[0])
         battle_sleep()
