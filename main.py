@@ -226,6 +226,9 @@ def main():
                 _run_mode(client, mode, state)
             except KeyboardInterrupt:
                 logger.info("用户中断（Ctrl+C），当前模式结束")
+            except Exception as e:
+                logger.error(f"模式异常退出：{e}")
+                _notify_telegram(e)
 
             # 模式完成，等待选择下一个
             logger.info(f"模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
