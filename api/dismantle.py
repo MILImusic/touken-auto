@@ -235,6 +235,16 @@ def run_dismantle_cycle(client: ToukenClient) -> None:
                     total_dismantled += len(batch)
 
             if not dismantleable and not comp_targets and received_count == 0:
+                # 刀位可能满了，尝试处理库存中已有的可刀解刀
+                forge_data2 = _get_forge_data(client)
+                existing, _ = _classify_swords(forge_data2, tantou_sword_ids)
+                if existing:
+                    logger.info(f"刀位满，刀解库存 {len(existing)} 把腾位...")
+                    for i in range(0, len(existing), MAX_DISMANTLE_PER_BATCH):
+                        batch = existing[i:i + MAX_DISMANTLE_PER_BATCH]
+                        _do_dismantle(client, batch)
+                        total_dismantled += len(batch)
+                    continue
                 logger.info("无非短刀可领取，无可操作的刀，循环结束")
                 break
 

@@ -351,13 +351,39 @@ def _composition_loop(client: ToukenClient, known_tantou_sword_ids: set[int]) ->
                     break
 
         if not did_any_union and received_count == 0:
-            logger.info("无新短刀可领取，无素材可习合，循环结束")
+            # 尝试刀解非短刀腾位
+            freed = _try_free_slots(client, known_tantou_sword_ids)
+            if freed > 0:
+                logger.info(f"刀位满，刀解 {freed} 把非短刀腾位，继续领取...")
+                continue
+            logger.info("无新短刀可领取，无素材可习合，无可刀解腾位，循环结束")
             break
 
         if not did_any_union and received_count > 0:
             logger.info("本轮领取了刀但无法习合（素材不足），继续领取...")
             continue
 
+
+
+def _try_free_slots(client: ToukenClient, tantou_sword_ids: set[int]) -> int:
+    """刀解非短刀释放刀位，返回刀解数量"""
+    from .dismantle import _get_forge_data, _classify_swords, _do_dismantle, MAX_DISMANTLE_PER_BATCH
+    forge_data = _get_forge_data(client)
+    dismantleable, comp_targets = _classify_swords(forge_data, tantou_sword_ids)
+
+    # 先习合保护刀的素材
+    if comp_targets:
+        from .dismantle import _do_composition_for_protected
+        _do_composition_for_protected(client, comp_targets)
+        forge_data = _get_forge_data(client)
+        dismantleable, _ = _classify_swords(forge_data, tantou_sword_ids)
+
+    freed = 0
+    for i in range(0, len(dismantleable), MAX_DISMANTLE_PER_BATCH):
+        batch = dismantleable[i:i + MAX_DISMANTLE_PER_BATCH]
+        _do_dismantle(client, batch)
+        freed += len(batch)
+    return freed
 
 
 def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> None:
