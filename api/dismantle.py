@@ -93,12 +93,15 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     swords = forge_data.get("sword", {})
 
     # 提取内番中的 serial_id
+    # forge 格式：{type, horse_id1/2, field_id1/2, bout_id1/2, finished_at}
+    # composition 格式：[serial_id, ...]
     duty = forge_data.get("duty", {})
     duty_sids: set[int] = set()
     if isinstance(duty, list):
         duty_sids = set(duty)
     elif isinstance(duty, dict):
-        for key, val in duty.items():
+        for key in ("horse_id1", "horse_id2", "field_id1", "field_id2", "bout_id1", "bout_id2"):
+            val = duty.get(key)
             if isinstance(val, int):
                 duty_sids.add(val)
 
