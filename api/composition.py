@@ -412,19 +412,27 @@ def _try_free_slots(client: ToukenClient, tantou_sword_ids: set[int]) -> int:
 
 
 def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> None:
-    """打印习合汇总"""
+    """打印习合汇总（含保护刀状态）"""
     try:
         comp_data = _get_composition_data(client)
     except Exception:
         logger.warning("无法获取汇总数据")
         return
+
+    # 未保护刀汇总
     summary: dict[int, dict] = {}
+    # 保护刀汇总
+    protected_summary: list[dict] = []
+
     for sword in comp_data.get("sword", {}).values():
         sword_id = sword.get("sword_id")
         if sword_id not in sword_ids:
             continue
-        if sword.get("protect", 0) != 0:
+
+        if sword.get("protect", 0) >= 1:
+            protected_summary.append(sword)
             continue
+
         if sword_id not in summary:
             summary[sword_id] = {"lv7": 0, "incomplete": []}
         if sword.get("ranbu_level", 0) >= TARGET_RANBU_LEVEL:
@@ -432,15 +440,15 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
         else:
             summary[sword_id]["incomplete"].append(sword)
 
+    # 未保护刀
     total_lv7 = sum(v["lv7"] for v in summary.values())
     total_incomplete = sum(len(v["incomplete"]) for v in summary.values())
-    logger.info(f"{title} — 已达乱舞{TARGET_RANBU_LEVEL}：{total_lv7} 把，未完成：{total_incomplete} 把")
+    logger.info(f"{title} — 未保护：Lv{TARGET_RANBU_LEVEL}+ {total_lv7} 把，未完成 {total_incomplete} 把")
     for sid, data in summary.items():
         if not data["lv7"] and not data["incomplete"]:
             continue
         detail = ""
         if data["incomplete"]:
-            # 显示未完成刀的当前等级和还差多少
             parts = []
             for s in data["incomplete"]:
                 lv = s.get("ranbu_level", 0)
@@ -449,3 +457,17 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
             detail = f"，未完成：{', '.join(parts)}"
         name = get_sword_name(sid)
         logger.info(f"  {name}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
+
+    # 保护刀
+    if protected_summary:
+        needs_feed = [s for s in protected_summary if s.get("ranbu_level", 0) < 10]
+        maxed = [s for s in protected_summary if s.get("ranbu_level", 0) >= 10]
+        if needs_feed:
+            logger.info(f"  保护刀（未满级）：{len(needs_feed)} 把")
+            for s in needs_feed:
+                name = get_sword_name(s.get("sword_id"))
+                lv = s.get("ranbu_level", 0)
+                needed = _swords_needed_for_target(s, 10)
+                logger.info(f"    {name}：乱舞Lv{lv}（到Lv10差{needed}把）")
+        if maxed:
+            logger.info(f"  保护刀（已满级Lv10）：{len(maxed)} 把")
