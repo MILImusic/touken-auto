@@ -414,6 +414,14 @@ def run_all_repairs(
             )
         logger.info(f"  serial_id={injured_sid} 治疗成功（HP={hp_now}/{hp_max_now}）")
 
+        # 从 heal_pi 校准白山气力追踪值（1-1 结束后 getpartyinfo 数据新鲜）
+        hakusan_sword_data = heal_pi.get("sword", {}).get(str(hakusan_sid), {})
+        real_fatigue = hakusan_sword_data.get("fatigue")
+        if real_fatigue is not None:
+            if real_fatigue != _hakusan_fatigue:
+                logger.info(f"  白山气力校准：追踪值={_hakusan_fatigue} → 实际值={real_fatigue}")
+                _hakusan_fatigue = real_fatigue
+
         # 治疗后检查白山气力（追踪值），低于 HAKUSAN_FATIGUE_HEAL_MIN 则立即补满再治下一把
         if _hakusan_fatigue < HAKUSAN_FATIGUE_HEAL_MIN:
             logger.info(f"  白山吉光治疗后气力（追踪值）={_hakusan_fatigue} < {HAKUSAN_FATIGUE_HEAL_MIN}，先补满再继续...")
