@@ -25,6 +25,7 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import battle_sleep, FORMATION_ID, set_sword, remove_sword, get_party_slots, recover_sword_fatigue
+import datetime
 
 # 阵型克制表：enemy_formation → counter_formation
 # 鋒矢(1)→逆行(3), 横隊(2)→鶴翼(5), 逆行(3)→方圓(6),
@@ -269,64 +270,81 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
     initial_bill = get_bill(client)
     last_check_bill = initial_bill
     total_runs = 0
+    start_time = datetime.datetime.now()
     logger.info(
         f"4-4 循环开始（队伍{SORTIE_44_PARTY_NO}），依赖札初始：{initial_bill}，"
         f"每 {SORTIE_44_CHECK_INTERVAL} 次检查"
     )
 
-    while True:
-        adjust_captain_for_fatigue(client, SORTIE_44_PARTY_NO)
-        run_repair_check(client, SORTIE_44_PARTY_NO)
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_44_PARTY_NO)
+            run_repair_check(client, SORTIE_44_PARTY_NO)
 
-        total_runs += 1
-        logger.info(f"[第 {total_runs} 次] 出阵 4-4（队伍{SORTIE_44_PARTY_NO}）...")
-        _run_single_sortie(client, SORTIE_44_PARTY_NO, SORTIE_44_EPISODE_ID, SORTIE_44_FIELD_ID)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 4-4（队伍{SORTIE_44_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_44_PARTY_NO, SORTIE_44_EPISODE_ID, SORTIE_44_FIELD_ID)
 
-        _check_and_recover_fatigue(client, SORTIE_44_PARTY_NO)
-        quick_expedition_check(client)
+            _check_and_recover_fatigue(client, SORTIE_44_PARTY_NO)
+            quick_expedition_check(client)
 
-        if total_runs % SORTIE_44_CHECK_INTERVAL == 0:
-            current_bill = get_bill(client)
-            gained = current_bill - last_check_bill
-            rest = YORAIFUDA_REST_SHORT_SECONDS if gained < YORAIFUDA_REST_LOW_THRESHOLD else YORAIFUDA_REST_LONG_SECONDS
-            logger.info(
-                f"[第 {total_runs} 次检查] 依赖札：{last_check_bill} → {current_bill}"
-                f"（+{gained}），休息 {rest}s..."
-            )
-            time.sleep(rest)
-            logger.info("  休息结束，继续新一轮...")
-            last_check_bill = current_bill
+            if total_runs % SORTIE_44_CHECK_INTERVAL == 0:
+                current_bill = get_bill(client)
+                gained = current_bill - last_check_bill
+                rest = YORAIFUDA_REST_SHORT_SECONDS if gained < YORAIFUDA_REST_LOW_THRESHOLD else YORAIFUDA_REST_LONG_SECONDS
+                logger.info(
+                    f"[第 {total_runs} 次检查] 依赖札：{last_check_bill} → {current_bill}"
+                    f"（+{gained}），休息 {rest}s..."
+                )
+                time.sleep(rest)
+                logger.info("  休息结束，继续新一轮...")
+                last_check_bill = current_bill
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        final_bill = get_bill(client) if total_runs > 0 else initial_bill
+        logger.info(
+            f"4-4 循环结束 — 共 {total_runs} 次，"
+            f"耗时 {str(elapsed).split('.')[0]}，"
+            f"依赖札 {initial_bill} → {final_bill}（+{final_bill - initial_bill}）"
+        )
+        raise
 
 
 # ── 4-3 循环（队伍4，固定休息）──────────────────────────────
 
 def run_sortie_4_3_loop(client: ToukenClient) -> None:
     """
-    队伍4 无限循环刷 4-3。
+    队伍3 无限循环刷 4-3。
     每 SORTIE_43_CHECK_INTERVAL 次固定休息 SORTIE_43_REST_SECONDS 秒，不检查依赖札。
     按 Ctrl+C 手动停止。
     """
     total_runs = 0
+    start_time = datetime.datetime.now()
     logger.info(
         f"4-3 循环开始（队伍{SORTIE_43_PARTY_NO}），"
         f"每 {SORTIE_43_CHECK_INTERVAL} 次休息 {SORTIE_43_REST_SECONDS}s"
     )
 
-    while True:
-        adjust_captain_for_fatigue(client, SORTIE_43_PARTY_NO)
-        run_repair_check(client, SORTIE_43_PARTY_NO)
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_43_PARTY_NO)
+            run_repair_check(client, SORTIE_43_PARTY_NO)
 
-        total_runs += 1
-        logger.info(f"[第 {total_runs} 次] 出阵 4-3（队伍{SORTIE_43_PARTY_NO}）...")
-        _run_single_sortie(client, SORTIE_43_PARTY_NO, SORTIE_43_EPISODE_ID, SORTIE_43_FIELD_ID)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 4-3（队伍{SORTIE_43_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_43_PARTY_NO, SORTIE_43_EPISODE_ID, SORTIE_43_FIELD_ID)
 
-        _check_and_recover_fatigue(client, SORTIE_43_PARTY_NO)
-        quick_expedition_check(client)
+            _check_and_recover_fatigue(client, SORTIE_43_PARTY_NO)
+            quick_expedition_check(client)
 
-        if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
-            logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
-            time.sleep(SORTIE_43_REST_SECONDS)
-            logger.info("  休息结束，继续新一轮...")
+            if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
+                time.sleep(SORTIE_43_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"4-3 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
 
 
 def run_sortie_7_3_loop(client: ToukenClient) -> None:
@@ -336,23 +354,29 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     按 Ctrl+C 手动停止。
     """
     total_runs = 0
+    start_time = datetime.datetime.now()
     logger.info(
         f"7-3 循环开始（队伍{SORTIE_73_PARTY_NO}），"
         f"每 {SORTIE_73_CHECK_INTERVAL} 次休息 {SORTIE_73_REST_SECONDS}s"
     )
 
-    while True:
-        adjust_captain_for_fatigue(client, SORTIE_73_PARTY_NO)
-        run_repair_check(client, SORTIE_73_PARTY_NO)
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_73_PARTY_NO)
+            run_repair_check(client, SORTIE_73_PARTY_NO)
 
-        total_runs += 1
-        logger.info(f"[第 {total_runs} 次] 出阵 7-3（队伍{SORTIE_73_PARTY_NO}）...")
-        _run_single_sortie(client, SORTIE_73_PARTY_NO, SORTIE_73_EPISODE_ID, SORTIE_73_FIELD_ID, skip_last_battle=True)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 7-3（队伍{SORTIE_73_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_73_PARTY_NO, SORTIE_73_EPISODE_ID, SORTIE_73_FIELD_ID, skip_last_battle=True)
 
-        _check_and_recover_fatigue(client, SORTIE_73_PARTY_NO)
-        quick_expedition_check(client)
+            _check_and_recover_fatigue(client, SORTIE_73_PARTY_NO)
+            quick_expedition_check(client)
 
-        if total_runs % SORTIE_73_CHECK_INTERVAL == 0:
-            logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
-            time.sleep(SORTIE_73_REST_SECONDS)
-            logger.info("  休息结束，继续新一轮...")
+            if total_runs % SORTIE_73_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
+                time.sleep(SORTIE_73_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"7-3 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
