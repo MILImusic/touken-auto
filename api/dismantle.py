@@ -24,7 +24,7 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import battle_sleep
-from .composition import _load_tantou_db, _do_union, _swords_needed_for_target, _get_composition_data, MAX_MATERIAL_PER_UNION, register_sword_names
+from .composition import _load_tantou_db, _do_union, _swords_needed_for_target, _get_composition_data, MAX_MATERIAL_PER_UNION, register_sword_names, mark_protected_composed
 
 NON_TANTOU_SWORD_TYPES: str = "2,6,5,7,3,4,10"
 MAX_DISMANTLE_PER_BATCH: int = 30
@@ -182,6 +182,7 @@ def _do_composition_for_protected(client: ToukenClient, comp_targets: dict[int, 
         if not to_feed:
             continue
 
+        mark_protected_composed(target_sid)
         logger.info(
             f"  习合：保护刀 serial_id={target_sid}"
             f"（ranbu_lv={ranbu}），喂 {len(to_feed)} 把素材"

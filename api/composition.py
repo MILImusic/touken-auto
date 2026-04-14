@@ -42,6 +42,7 @@ RANBU_EXP_PER_SWORD: int = 100
 
 _tantou_names: dict[int, str] = {}  # 短刀 sword_id → 刀名
 _sword_names: dict[int, str] = {}   # 全刀种 sword_id → 刀名
+_composed_protected_sids: set[int] = set()  # 本次 session 被喂过的保护刀 serial_id
 
 
 def _load_sword_names() -> None:
@@ -111,6 +112,11 @@ def get_sword_name(sword_id: int) -> str:
     """获取刀名，未知则返回 sword_id"""
     name = _sword_names.get(sword_id) or _tantou_names.get(sword_id, "")
     return name if name else str(sword_id)
+
+
+def mark_protected_composed(serial_id: int) -> None:
+    """记录一把保护刀本次 session 被习合过"""
+    _composed_protected_sids.add(serial_id)
 
 # 乱舞等级经验值表（累计值，按稀有度）
 # ranbu_level → 到达该等级需要的累计 ranbu_exp
@@ -494,19 +500,15 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
         name = get_sword_name(sid)
         logger.info(f"  {name}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
 
-    # 保护刀
-    if protected_summary:
-        needs_feed = [s for s in protected_summary if s.get("ranbu_level", 0) < 10]
-        maxed = [s for s in protected_summary if s.get("ranbu_level", 0) >= 10]
-        if needs_feed:
-            logger.info(f"  保护刀（未满级）：{len(needs_feed)} 把")
-            for s in needs_feed:
-                name = get_sword_name(s.get("sword_id"))
-                lv = s.get("ranbu_level", 0)
+    # 保护刀（只显示本次 session 被习合过的）
+    composed = [s for s in protected_summary if s.get("serial_id") in _composed_protected_sids]
+    if composed:
+        logger.info(f"  本次习合过的保护刀：{len(composed)} 把")
+        for s in composed:
+            name = get_sword_name(s.get("sword_id"))
+            lv = s.get("ranbu_level", 0)
+            if lv >= 10:
+                logger.info(f"    {name}：乱舞Lv10（已满级）")
+            else:
                 needed = _swords_needed_for_target(s, 10)
                 logger.info(f"    {name}：乱舞Lv{lv}（到Lv10差{needed}把）")
-        if maxed:
-            logger.info(f"  保护刀（已满级Lv10）：{len(maxed)} 把")
-            for s in maxed:
-                name = get_sword_name(s.get("sword_id"))
-                logger.info(f"    {name}：乱舞Lv10 ✓")
