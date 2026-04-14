@@ -21,6 +21,7 @@ from api.client import ToukenClient
 from api.expedition import run_expedition_cycle
 from api.repair import run_all_repairs
 from api.composition import run_composition_cycle
+from api.dismantle import run_dismantle_cycle
 from api.practice import run_practice_cycle
 from api.dungeon import run_dungeon_climb, run_dungeon_floor_loop
 from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop, run_sortie_7_3_loop
@@ -53,6 +54,7 @@ MODES = {
     5: "循环4-3版（日常任务 + 4-3无限循环，队伍3，每15次固定休息）",
     6: "循环7-3版（日常任务 + 7-3无限循环，队伍3，每15次固定休息）",
     7: "习合模式（领取短刀 + 自动习合到乱舞7）",
+    8: "刀解模式（领取非短刀 + 自动刀解释放刀位）",
 }
 
 
@@ -84,11 +86,12 @@ def select_mode() -> int:
     print(f"  {_C['cyan']}6. {MODES[6]}{R}")
     print(f"  {_C['dim']}── 其他 ──{R}")
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
+    print(f"  {_C['magenta']}8. {MODES[8]}{R}")
     while True:
-        raw = input("输入数字（1/2/3/4/5/6/7）: ").strip()
-        if raw in ("1", "2", "3", "4", "5", "6", "7"):
+        raw = input("输入数字（1-8）: ").strip()
+        if raw in ("1", "2", "3", "4", "5", "6", "7", "8"):
             return int(raw)
-        print("  请输入 1～7")
+        print("  请输入 1～8")
 
 
 def handle_leave_requests(client: ToukenClient, state: dict) -> None:
@@ -181,6 +184,10 @@ def main():
         elif mode == 7:
             # 习合模式（领取短刀 + 自动习合到乱舞7）
             run_composition_cycle(client)
+
+        elif mode == 8:
+            # 刀解模式（领取非短刀 + 自动刀解释放刀位）
+            run_dismantle_cycle(client)
 
 
 def _beep(sound: str = "Basso") -> None:
