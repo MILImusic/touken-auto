@@ -83,15 +83,14 @@ def run_sword_manager(client: ToukenClient) -> None:
 
             if received_count > 0:
                 did_anything = True
-                # 习合短刀
-                comp_data = _get_composition_data(client)
-                all_swords = comp_data.get("sword", {})
-
-                # 用习合模块的逻辑处理短刀
-                from .composition import TARGET_RANBU_LEVEL, _feed_target, _swords_needed_for_target
+                # 习合短刀（一次 composition/index 检查所有 sword_id）
+                from .composition import TARGET_RANBU_LEVEL, _feed_target
+                need_refresh = True
                 for sword_id in tantou_sword_ids:
                     while True:
-                        comp_data = _get_composition_data(client)
+                        if need_refresh:
+                            comp_data = _get_composition_data(client)
+                            need_refresh = False
                         duty_sids = set(comp_data.get("duty", []))
                         all_unprotected = [
                             s for s in comp_data.get("sword", {}).values()
@@ -110,6 +109,7 @@ def run_sword_manager(client: ToukenClient) -> None:
                             break
                         if _feed_target(client, target, materials, TARGET_RANBU_LEVEL):
                             total_composed += 1
+                            need_refresh = True  # 喂完才刷新
                         else:
                             break
 
