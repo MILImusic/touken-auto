@@ -325,6 +325,29 @@ Q3: eventsally status=2 的真实原因？
     ★3：38把（3800 exp）  ★4：24把（2400 exp）
     ★5：17把（1700 exp）
 
+■ forge
+  操作：打开锻刀界面（刀解也在此入口）
+  参数：sword, t
+  返回：JSON
+    sword            ← 所有刀剑完整数据（同 composition/index）
+    forge            ← 锻造槽状态（slot_no, finished_at, multiple[]）
+    equip, party, artifact, duty, resource, bill
+    t
+  注意：duty 结构与 composition/index 不同：
+        forge 返回 {type, horse_id1/2, field_id1/2, bout_id1/2, finished_at}
+        composition 返回 [serial_id, ...]（列表）
+
+■ forge/dismantle
+  操作：刀解（销毁刀剑回收资源）
+  参数：serial_id（逗号分隔，最多30个）, sword, t
+  返回：JSON
+    resource         ← 刀解后的资源
+    item             ← 当前道具
+    t
+  安全约束：只刀解 protect==0 的刀，绝不碰 protect>=1
+  注意：serial_id 从 forge 响应的 sword 字段中提取
+        需排除编队（role_id!=0）和内番中的刀
+
 ■ 白山吉光编成变更（2026-04-04）
   部隊1 为专属治疗队，白山吉光常驻槽1，平时只放白山（槽2-6 空置）。
   原为 部隊2，已更新 HAKUSAN_PARTY_NO = 1。
