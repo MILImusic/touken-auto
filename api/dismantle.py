@@ -24,7 +24,7 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import battle_sleep
-from .composition import _load_tantou_db, _do_union, _swords_needed_for_target, _get_composition_data, MAX_MATERIAL_PER_UNION
+from .composition import _load_tantou_db, _do_union, _swords_needed_for_target, _get_composition_data, MAX_MATERIAL_PER_UNION, register_sword_names
 
 NON_TANTOU_SWORD_TYPES: str = "2,6,5,7,3,4,10"
 MAX_DISMANTLE_PER_BATCH: int = 30
@@ -48,6 +48,10 @@ def _receive_non_tantou(client: ToukenClient) -> int:
     if not receive_items:
         logger.info("受取箱无非短刀可领取")
         return 0
+
+    # 采集刀名
+    names = {item["item_id"]: item.get("name", "") for item in receive_items.values() if item.get("name")}
+    register_sword_names(names)
 
     all_sids = list(receive_items.keys())
     batch_sids = all_sids[:MAX_RECEIVE_PER_BATCH]
