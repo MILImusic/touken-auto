@@ -40,7 +40,7 @@ FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队�
 FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
 
 # ── 4-4 循环配置（队伍2，检查依赖札）────────────────────────
-SORTIE_44_PARTY_NO:              int = 2
+SORTIE_44_PARTY_NO:              int = 3
 SORTIE_44_EPISODE_ID:            int = 4
 SORTIE_44_FIELD_ID:              int = 4   # 4-4
 SORTIE_44_CHECK_INTERVAL:        int = 15
