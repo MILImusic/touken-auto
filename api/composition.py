@@ -39,12 +39,22 @@ MAX_RECEIVE_PER_BATCH: int = 100
 RANBU_EXP_PER_SWORD: int = 100
 
 
+_tantou_names: dict[int, str] = {}  # sword_id → 刀名（全局缓存）
+
+
 def _load_tantou_db() -> set[int]:
-    """从本地文件加载已知短刀 sword_id 集合"""
+    """从本地文件加载已知短刀 sword_id 集合（兼容旧格式）"""
+    global _tantou_names
     if _TANTOU_DB_PATH.exists():
         try:
             data = json.loads(_TANTOU_DB_PATH.read_text())
-            ids = set(data)
+            if isinstance(data, dict):
+                # 新格式：{sword_id_str: name}
+                _tantou_names = {int(k): v for k, v in data.items()}
+                ids = set(_tantou_names.keys())
+            else:
+                # 旧格式：[sword_id, ...]
+                ids = set(data)
             logger.debug(f"加载已知短刀类型：{len(ids)} 种")
             return ids
         except (json.JSONDecodeError, TypeError):
@@ -53,10 +63,21 @@ def _load_tantou_db() -> set[int]:
 
 
 def _save_tantou_db(sword_ids: set[int]) -> None:
-    """持久化已知短刀 sword_id 集合"""
+    """持久化已知短刀 {sword_id: name} 映射"""
     _TANTOU_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _TANTOU_DB_PATH.write_text(json.dumps(sorted(sword_ids)))
+    # 保留已有名字，新的暂时用空字符串
+    for sid in sword_ids:
+        if sid not in _tantou_names:
+            _tantou_names[sid] = ""
+    data = {str(k): v for k, v in _tantou_names.items() if k in sword_ids}
+    _TANTOU_DB_PATH.write_text(json.dumps(data, ensure_ascii=False))
     logger.debug(f"保存已知短刀类型：{len(sword_ids)} 种")
+
+
+def get_sword_name(sword_id: int) -> str:
+    """获取刀名，未知则返回 sword_id"""
+    name = _tantou_names.get(sword_id, "")
+    return name if name else str(sword_id)
 
 # 乱舞等级经验值表（累计值，按稀有度）
 # ranbu_level → 到达该等级需要的累计 ranbu_exp
@@ -95,10 +116,14 @@ def _receive_tantou(client: ToukenClient) -> tuple[int, set[int]]:
         logger.info("受取箱无短刀可领取")
         return 0, set()
 
-    # 收集短刀 sword_id 集合（item_id = sword_id）
+    # 收集短刀 sword_id 集合 + 名字（item_id = sword_id）
     tantou_sword_ids: set[int] = set()
     for item in receive_items.values():
-        tantou_sword_ids.add(item["item_id"])
+        sid = item["item_id"]
+        tantou_sword_ids.add(sid)
+        name = item.get("name", "")
+        if name and (sid not in _tantou_names or not _tantou_names[sid]):
+            _tantou_names[sid] = name
 
     # 取前100个
     all_sids = list(receive_items.keys())
@@ -422,4 +447,5 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
                 needed = _swords_needed_for_target(s, TARGET_RANBU_LEVEL)
                 parts.append(f"Lv{lv}(差{needed}把)")
             detail = f"，未完成：{', '.join(parts)}"
-        logger.info(f"  sword_id={sid}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
+        name = get_sword_name(sid)
+        logger.info(f"  {name}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
