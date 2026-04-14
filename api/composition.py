@@ -43,6 +43,7 @@ RANBU_EXP_PER_SWORD: int = 100
 _tantou_names: dict[int, str] = {}  # 短刀 sword_id → 刀名
 _sword_names: dict[int, str] = {}   # 全刀种 sword_id → 刀名
 _composed_protected_sids: set[int] = set()  # 本次 session 被喂过的保护刀 serial_id
+_composed_sword_ids: set[int] = set()       # 本次 session 有习合活动的 sword_id
 
 
 def _load_sword_names() -> None:
@@ -266,6 +267,7 @@ def _feed_target(
     返回是否执行了任何习合。
     """
     target_sid = target["serial_id"]
+    target_sword_id = target.get("sword_id")
     target_ranbu = target.get("ranbu_level", 0)
     target_exp = target.get("ranbu_exp", 0)
     is_protected = target.get("protect", 0) >= 1
@@ -294,6 +296,9 @@ def _feed_target(
         f"  完成：喂了 {fed_count} 把，预估 exp={estimated_exp}"
         + (f"，已达乱舞{target_level}" if fed_count >= needed else f"，还差 {needed - fed_count} 把")
     )
+
+    if target_sword_id:
+        _composed_sword_ids.add(target_sword_id)
 
     return True
 
@@ -470,9 +475,11 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
         sword_id = sword.get("sword_id")
         if sword_id not in sword_ids:
             continue
+        # 只统计本次有习合活动的 sword_id
+        if sword_id not in _composed_sword_ids:
+            continue
 
         if sword.get("protect", 0) >= 1:
-            protected_summary.append(sword)
             continue
 
         if sword_id not in summary:
@@ -482,7 +489,7 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
         else:
             summary[sword_id]["incomplete"].append(sword)
 
-    # 未保护刀
+    # 未保护刀（仅本次有变动的）
     total_lv7 = sum(v["lv7"] for v in summary.values())
     total_incomplete = sum(len(v["incomplete"]) for v in summary.values())
     logger.info(f"{title} — 未保护：Lv{TARGET_RANBU_LEVEL}+ {total_lv7} 把，未完成 {total_incomplete} 把")
