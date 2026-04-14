@@ -500,8 +500,11 @@ def _print_summary(client: ToukenClient, sword_ids: set[int], title: str) -> Non
         name = get_sword_name(sid)
         logger.info(f"  {name}：Lv{TARGET_RANBU_LEVEL}+ {data['lv7']} 把{detail}")
 
-    # 保护刀（只显示本次 session 被习合过的）
-    composed = [s for s in protected_summary if s.get("serial_id") in _composed_protected_sids]
+    # 保护刀（只显示本次 session 被习合过的，不限于短刀）
+    composed = [
+        s for s in comp_data.get("sword", {}).values()
+        if s.get("protect", 0) >= 1 and s.get("serial_id") in _composed_protected_sids
+    ]
     if composed:
         logger.info(f"  本次习合过的保护刀：{len(composed)} 把")
         for s in composed:

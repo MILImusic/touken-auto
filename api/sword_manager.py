@@ -24,22 +24,23 @@ from .dismantle import (
 )
 
 
-def _dismantle_existing(client: ToukenClient, tantou_sword_ids: set[int]) -> int:
+def _dismantle_existing(client: ToukenClient, tantou_sword_ids: set[int]) -> tuple[int, int]:
     """
     刀解库存中已有的可刀解刀剑（不领取，只处理现有的）。
-    返回刀解数量。
+    返回 (刀解数量, 习合数量)。
     """
     forge_data = _get_forge_data(client)
     dismantleable, comp_targets = _classify_swords(forge_data, tantou_sword_ids)
 
-    total = 0
+    total_dismantled = 0
+    total_composed = 0
 
     # 先习合
     if comp_targets:
         fed = _do_composition_for_protected(client, comp_targets)
+        total_composed += fed
         if fed > 0:
             logger.info(f"  库存习合：喂了 {fed} 把素材给保护刀")
-            # 刷新数据
             forge_data = _get_forge_data(client)
             dismantleable, _ = _classify_swords(forge_data, tantou_sword_ids)
 
@@ -49,9 +50,9 @@ def _dismantle_existing(client: ToukenClient, tantou_sword_ids: set[int]) -> int
         for i in range(0, len(dismantleable), MAX_DISMANTLE_PER_BATCH):
             batch = dismantleable[i:i + MAX_DISMANTLE_PER_BATCH]
             _do_dismantle(client, batch)
-            total += len(batch)
+            total_dismantled += len(batch)
 
-    return total
+    return total_dismantled, total_composed
 
 
 def run_sword_manager(client: ToukenClient) -> None:
@@ -67,10 +68,11 @@ def run_sword_manager(client: ToukenClient) -> None:
 
     try:
         # 第一步：处理库存中已有的未保护刀（腾刀位）
-        freed = _dismantle_existing(client, tantou_sword_ids)
+        freed, composed = _dismantle_existing(client, tantou_sword_ids)
         total_dismantled += freed
-        if freed:
-            logger.info(f"库存清理完成，刀解 {freed} 把")
+        total_composed += composed
+        if freed or composed:
+            logger.info(f"库存清理完成，刀解 {freed} 把，习合 {composed} 次")
 
         while True:
             did_anything = False
@@ -138,10 +140,11 @@ def run_sword_manager(client: ToukenClient) -> None:
 
             # 第四步：如果领取失败（刀位满），尝试刀解腾位
             if received_count == 0 and non_tantou_received == 0:
-                freed = _dismantle_existing(client, tantou_sword_ids)
+                freed, composed = _dismantle_existing(client, tantou_sword_ids)
                 total_dismantled += freed
-                if freed > 0:
-                    logger.info(f"刀位满，刀解 {freed} 把腾位，继续领取...")
+                total_composed += composed
+                if freed > 0 or composed > 0:
+                    logger.info(f"刀位满，刀解 {freed} 把+习合 {composed} 次腾位，继续领取...")
                     continue
                 else:
                     logger.info("无刀可领取，无刀可刀解，循环结束")
