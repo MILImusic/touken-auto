@@ -180,6 +180,9 @@ def auto_get_token() -> tuple[str, str]:
                 chrome_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 chrome_proc.kill()
+            # 彻底杀掉残留子进程（GoogleUpdater 等）
+            subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True, timeout=3)
+            subprocess.run(["pkill", "-9", "-f", "GoogleUpdater"], capture_output=True, timeout=3)
             logger.info("Chrome 已关闭")
         Path(NET_LOG_PATH).unlink(missing_ok=True)
 
