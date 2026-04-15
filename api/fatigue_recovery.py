@@ -54,25 +54,31 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
     conquest_data = client.get_conquest_data()
     original_slots = get_party_slots(conquest_data, party_no)
 
-    for target_sid, current_fat in low_swords:
-        target_order = next((o for o, sid in original_slots.items() if sid == target_sid), None)
-        if target_order is None:
+    # 第一把刀换到队长位
+    first_sid = low_swords[0][0]
+    first_order = next((o for o, sid in original_slots.items() if sid == first_sid), None)
+    if first_order and first_order != 1:
+        set_sword(client, party_no, 1, first_sid)
+        battle_sleep()
+
+    # 一次性清空槽2-6
+    cur_data = client.get_conquest_data()
+    cur_slots = get_party_slots(cur_data, party_no)
+    for order, sid in sorted(cur_slots.items()):
+        if order == 1:
             continue
+        remove_sword(client, party_no, order, sid)
+        battle_sleep()
 
-        logger.info(f"  恢复 serial_id={target_sid}（槽{target_order}，气力={current_fat}）")
+    logger.info("队伍已清场，开始逐刀恢复...")
 
-        # 把目标刀换到队长位
-        if target_order != 1:
+    # 逐把换队长跑1-1
+    for i, (target_sid, current_fat) in enumerate(low_swords):
+        logger.info(f"  [{i+1}/{len(low_swords)}] serial_id={target_sid}（气力={current_fat}）")
+
+        # 换队长（第一把已经在位）
+        if i > 0:
             set_sword(client, party_no, 1, target_sid)
-            battle_sleep()
-
-        # 移除槽2-6
-        cur_data = client.get_conquest_data()
-        cur_slots = get_party_slots(cur_data, party_no)
-        for order, sid in sorted(cur_slots.items()):
-            if order == 1:
-                continue
-            remove_sword(client, party_no, order, sid)
             battle_sleep()
 
         # 跑1-1直到满气力
@@ -80,7 +86,6 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
         for round_no in range(1, max_rounds + 1):
             run_battle_1_1(client, party_no)
 
-            # 检查气力
             check_pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
             battle_sleep()
             sword_data = check_pi.get("sword", {}).get(str(target_sid), {})
@@ -88,29 +93,19 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
             logger.info(f"    round {round_no}：气力={fat}")
 
             if fat >= FATIGUE_TARGET:
-                logger.info(f"  serial_id={target_sid} 气力恢复到 {fat}")
+                logger.info(f"  serial_id={target_sid} 气力恢复完成")
                 break
         else:
-            logger.warning(f"  serial_id={target_sid} 超出 {max_rounds} 轮，气力可能未满")
+            logger.warning(f"  serial_id={target_sid} 超出 {max_rounds} 轮")
 
-        # 归位：恢复原队伍
-        if target_order != 1:
-            set_sword(client, party_no, 1, original_slots[1])
-            battle_sleep()
-            set_sword(client, party_no, target_order, target_sid)
-            battle_sleep()
-
-        # 归位槽2-6
-        for order, sid in sorted(original_slots.items()):
-            if order == 1:
-                continue
-            if sid == target_sid:
-                continue  # 已归位
-            cur_data2 = client.get_conquest_data()
-            cur_slots2 = get_party_slots(cur_data2, party_no)
-            if order in cur_slots2 and cur_slots2[order] == sid:
-                continue  # 已在位
-            set_sword(client, party_no, order, sid)
-            battle_sleep()
+    # 全部恢复完，一次性还原队伍
+    logger.info("全部恢复完成，还原队伍...")
+    set_sword(client, party_no, 1, original_slots[1])
+    battle_sleep()
+    for order, sid in sorted(original_slots.items()):
+        if order == 1:
+            continue
+        set_sword(client, party_no, order, sid)
+        battle_sleep()
 
     logger.info(f"部隊{party_no} 全员气力恢复完成")
