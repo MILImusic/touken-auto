@@ -15,8 +15,10 @@
 
 import json
 import time
+import shutil
 import subprocess
-import signal
+import tempfile
+from pathlib import Path
 
 import httpx
 import websocket
@@ -27,6 +29,7 @@ CHROME_PROFILE_DIR = "Profile 1"
 CHROME_USER_DATA = "/Users/toevskyastora/Library/Application Support/Google/Chrome"
 CDP_PORT = 9222
 GAME_URL = "https://play.games.dmm.com/game/tohken"
+TEMP_USER_DATA = "/tmp/touken-chrome-auto"
 
 # 超时设置
 LOGIN_PAGE_TIMEOUT = 15      # 等待 DMM 登录页加载
@@ -75,21 +78,51 @@ class CDPClient:
         self.ws.close()
 
 
+def _prepare_temp_profile() -> str:
+    """复制 Chrome Profile 到临时目录（remote debugging 不能用默认数据目录）"""
+    src = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR
+    dst = Path(TEMP_USER_DATA) / "Default"  # 临时目录用 Default 作为 profile
+
+    # 清理旧的临时目录
+    if Path(TEMP_USER_DATA).exists():
+        shutil.rmtree(TEMP_USER_DATA, ignore_errors=True)
+
+    dst.mkdir(parents=True, exist_ok=True)
+
+    # 只复制关键文件（Cookies、Login Data 等），不复制缓存
+    for name in ("Cookies", "Cookies-journal", "Login Data", "Login Data-journal",
+                 "Preferences", "Secure Preferences", "Web Data", "Web Data-journal",
+                 "Local State"):
+        src_file = src / name
+        if src_file.exists():
+            shutil.copy2(src_file, dst / name)
+
+    # Local State 在上层目录
+    local_state = Path(CHROME_USER_DATA) / "Local State"
+    if local_state.exists():
+        shutil.copy2(local_state, Path(TEMP_USER_DATA) / "Local State")
+
+    logger.debug(f"临时 Profile 准备完成：{TEMP_USER_DATA}")
+    return TEMP_USER_DATA
+
+
 def _launch_chrome() -> subprocess.Popen:
-    """启动 Chrome 带 remote debugging"""
+    """启动 Chrome 带 remote debugging（使用临时 Profile）"""
     # 先杀掉已有的 Chrome 进程（避免端口冲突）
     subprocess.run(["pkill", "-f", "Google Chrome"], capture_output=True)
-    time.sleep(1)
+    time.sleep(2)
+
+    temp_data = _prepare_temp_profile()
 
     proc = subprocess.Popen([
         CHROME_PATH,
         f"--remote-debugging-port={CDP_PORT}",
-        f"--user-data-dir={CHROME_USER_DATA}",
-        f"--profile-directory={CHROME_PROFILE_DIR}",
+        f"--user-data-dir={temp_data}",
         "--no-first-run",
+        "--no-default-browser-check",
         GAME_URL,
     ])
-    logger.info("Chrome 已启动")
+    logger.info("Chrome 已启动（临时 Profile）")
     return proc
 
 
