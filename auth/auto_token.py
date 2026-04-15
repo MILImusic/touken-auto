@@ -1,15 +1,11 @@
 """
-自动获取 token —— pyautogui 模拟鼠标 + Chrome net-log 抓 token
+自动获取 token —— opencv 模板匹配 + pyautogui 鼠标模拟 + net-log 抓 token
 
 流程：
-  1. 启动 Chrome（原始 Profile，不需要 remote debugging）
-  2. 导航到游戏页 → DMM 登录页
-  3. 获取 Chrome 窗口位置，按相对坐标点击 Google 登录
-  4. 等待跳转回游戏页 → 点击绿色箭头 → 点击本丸
-  5. 从 Chrome net-log 文件解析 reflect 响应 → 提取 token
-  6. 关闭 Chrome
-
-依赖：pyautogui, Pillow, opencv-python-headless
+  1. 启动 Chrome（原始 Profile + net-log）
+  2. opencv 截图匹配按钮 → pyautogui 点击
+  3. 从 net-log 解析 reflect → 提取 token
+  4. 关闭 Chrome
 """
 
 import json
@@ -18,6 +14,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
 import pyautogui
 from loguru import logger
 
@@ -26,18 +24,15 @@ CHROME_PROFILE_DIR = "Profile 1"
 CHROME_USER_DATA = "/Users/toevskyastora/Library/Application Support/Google/Chrome"
 GAME_URL = "https://play.games.dmm.com/game/tohken"
 NET_LOG_PATH = "/tmp/touken-chrome-net.json"
+TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-# 按钮在 Chrome 窗口中的相对位置（0~1）
-GOOGLE_BTN_REL = (0.49, 0.25)        # DMM 登录页 Google 按钮
-GREEN_ARROW_REL = (0.50, 0.65)       # 游戏页绿色箭头（iframe 内）
-HONMARU_REL = (0.50, 0.75)           # 标题画面本丸按钮
+RETINA_SCALE = 2  # macOS Retina 缩放倍数
 
 
 def _confirm_profile() -> bool:
     """读取 Chrome Profile 账号信息，自动确认"""
     prefs_path = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR / "Preferences"
     if not prefs_path.exists():
-        logger.warning(f"找不到 Profile 配置：{prefs_path}")
         return False
     try:
         prefs = json.loads(prefs_path.read_text())
@@ -45,25 +40,20 @@ def _confirm_profile() -> bool:
         profile_name = prefs.get("profile", {}).get("name", "未知")
         if accounts:
             email = accounts[0].get("email", "未知")
-            name = accounts[0].get("full_name", "未知")
-            logger.info(f"Chrome Profile：{profile_name}（{email} / {name}）")
+            logger.info(f"Chrome Profile：{profile_name}（{email}）")
             return True
-        else:
-            logger.warning(f"Chrome Profile：{profile_name}（无账号信息）")
-            return False
-    except Exception as e:
-        logger.warning(f"读取 Profile 失败：{e}")
+        return False
+    except Exception:
         return False
 
 
 def _launch_chrome() -> subprocess.Popen:
-    """启动 Chrome（原始 Profile + net-log）"""
+    """启动 Chrome"""
     subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
     subprocess.run(["killall", "-9", "Google Chrome"], capture_output=True)
     time.sleep(3)
 
-    lock_file = Path(CHROME_USER_DATA) / "SingletonLock"
-    lock_file.unlink(missing_ok=True)
+    Path(CHROME_USER_DATA, "SingletonLock").unlink(missing_ok=True)
     Path(NET_LOG_PATH).unlink(missing_ok=True)
 
     proc = subprocess.Popen([
@@ -79,44 +69,55 @@ def _launch_chrome() -> subprocess.Popen:
     return proc
 
 
-def _get_chrome_window() -> tuple[int, int, int, int] | None:
-    """用 AppleScript 获取 Chrome 前台窗口的 (left, top, width, height)"""
-    script = '''
-    tell application "Google Chrome"
-        set b to bounds of front window
-        return (item 1 of b as string) & "," & (item 2 of b as string) & "," & (item 3 of b as string) & "," & (item 4 of b as string)
-    end tell
-    '''
-    try:
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5)
-        parts = [int(x.strip()) for x in result.stdout.strip().split(",")]
-        left, top, right, bottom = parts
-        return left, top, right - left, bottom - top
-    except Exception as e:
-        logger.warning(f"获取 Chrome 窗口失败：{e}")
-        return None
-
-
-def _click_in_window(rel_x: float, rel_y: float, label: str) -> bool:
-    """在 Chrome 窗口的相对位置点击"""
-    win = _get_chrome_window()
-    if not win:
+def _find_and_click(template_name: str, label: str, timeout: int = 20, confidence: float = 0.7) -> bool:
+    """
+    截图 → opencv 模板匹配 → 计算逻辑坐标 → pyautogui 点击。
+    Retina 屏幕：截图是物理分辨率，坐标除以 RETINA_SCALE 得到逻辑坐标。
+    """
+    template_path = TEMPLATES_DIR / template_name
+    if not template_path.exists():
+        logger.warning(f"模板不存在：{template_path}")
         return False
 
-    left, top, width, height = win
-    x = left + int(width * rel_x)
-    y = top + int(height * rel_y)
+    template = cv2.imread(str(template_path))
+    if template is None:
+        logger.warning(f"无法读取模板：{template_path}")
+        return False
 
-    logger.debug(f"点击 {label}：窗口({left},{top},{width}x{height}) → 坐标({x},{y})")
-    pyautogui.moveTo(x, y, duration=0.3)
-    time.sleep(0.2)
-    pyautogui.click()
-    logger.info(f"已点击 {label}（{x}, {y}）")
-    return True
+    th, tw = template.shape[:2]
+
+    for attempt in range(timeout):
+        # 截图（物理分辨率）
+        screenshot = pyautogui.screenshot()
+        screen = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+
+        # 模板匹配
+        result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        if max_val >= confidence:
+            # 物理坐标中心
+            phys_x = max_loc[0] + tw // 2
+            phys_y = max_loc[1] + th // 2
+
+            # 转逻辑坐标
+            logic_x = phys_x // RETINA_SCALE
+            logic_y = phys_y // RETINA_SCALE
+
+            logger.info(f"找到 {label}（confidence={max_val:.3f}，逻辑坐标=({logic_x}, {logic_y})）")
+            pyautogui.moveTo(logic_x, logic_y, duration=0.3)
+            time.sleep(0.2)
+            pyautogui.click()
+            return True
+
+        time.sleep(1)
+
+    logger.warning(f"未找到 {label}（{timeout}秒超时）")
+    return False
 
 
 def _extract_token_from_netlog() -> tuple[str, str] | None:
-    """从 Chrome net-log 文件中提取 sword 和 fuel_csrf_token"""
+    """从 Chrome net-log 中提取 sword 和 fuel_csrf_token"""
     log_path = Path(NET_LOG_PATH)
     if not log_path.exists():
         return None
@@ -139,22 +140,24 @@ def auto_get_token() -> tuple[str, str]:
     chrome_proc = None
 
     try:
-        # 1. 启动 Chrome
         chrome_proc = _launch_chrome()
         time.sleep(5)
 
-        # 2. 点击 Google 登录（如果在 DMM 登录页）
-        _click_in_window(*GOOGLE_BTN_REL, "Google 登录")
-        time.sleep(8)
+        # 1. 点击 Google 登录
+        clicked = _find_and_click("google_login.png", "Google 登录", timeout=15)
+        if clicked:
+            time.sleep(8)
+        else:
+            logger.info("未找到 Google 登录（可能已登录），继续...")
 
-        # 3. 点击绿色箭头
-        _click_in_window(*GREEN_ARROW_REL, "绿色箭头")
-        time.sleep(5)
+        # 2. 点击绿色箭头
+        _find_and_click("green_arrow.png", "绿色箭头", timeout=30)
+        time.sleep(3)
 
-        # 4. 点击本丸
-        _click_in_window(*HONMARU_REL, "本丸")
+        # 3. 点击本丸
+        _find_and_click("honmaru.png", "本丸", timeout=30)
 
-        # 5. 等待 token 出现在 net-log 中
+        # 4. 等待 token
         logger.info("等待 token...")
         for _ in range(30):
             time.sleep(1)
