@@ -14,7 +14,6 @@
 """
 
 import json
-import shutil
 import time
 import subprocess
 from pathlib import Path
@@ -77,40 +76,20 @@ class CDPClient:
         self.ws.close()
 
 
-def _prepare_temp_profile() -> str:
-    """symlink 原始 Profile 到临时目录（Chrome 不允许默认目录开 remote debugging）"""
-    temp_dir = Path(TEMP_USER_DATA)
-
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    # symlink Profile 目录
-    src_profile = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR
-    (temp_dir / "Default").symlink_to(src_profile)
-
-    # 复制 Local State（Chrome 会修改它）
-    local_state = Path(CHROME_USER_DATA) / "Local State"
-    if local_state.exists():
-        shutil.copy2(local_state, temp_dir / "Local State")
-
-    logger.debug(f"临时 Profile：symlink → {src_profile}")
-    return TEMP_USER_DATA
-
-
 def _launch_chrome() -> subprocess.Popen:
-    """启动 Chrome 带 remote debugging"""
+    """启动 Chrome 带 remote debugging（不指定 user-data-dir，让 Chrome 用默认路径）"""
     subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
     subprocess.run(["killall", "-9", "Google Chrome"], capture_output=True)
     time.sleep(3)
 
-    temp_data = _prepare_temp_profile()
+    # 清理锁文件
+    lock_file = Path(CHROME_USER_DATA) / "SingletonLock"
+    lock_file.unlink(missing_ok=True)
 
     proc = subprocess.Popen([
         CHROME_PATH,
         f"--remote-debugging-port={CDP_PORT}",
-        f"--user-data-dir={temp_data}",
+        f"--profile-directory={CHROME_PROFILE_DIR}",
         "--remote-allow-origins=*",
         "--no-first-run",
         "--no-default-browser-check",
