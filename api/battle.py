@@ -138,76 +138,54 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
         logger.warning(f"部隊{party_no} 槽位数据为空，跳过气力恢复")
         return
 
-    # 按需逐刀恢复
-    for target_sid in low_fatigue_sids:
-        target_order = next((o for o, sid in slots.items() if sid == target_sid), None)
-        if target_order is None:
-            logger.warning(f"  serial_id={target_sid} 不在部隊{party_no} 中，跳过")
+    # 第一把刀换到队长位
+    first_sid = low_fatigue_sids[0]
+    first_order = next((o for o, sid in slots.items() if sid == first_sid), None)
+    if first_order and first_order != 1:
+        set_sword(client, party_no, 1, first_sid)
+        battle_sleep()
+
+    # 一次性清空槽2-6
+    cur_data = client.get_conquest_data()
+    cur_slots = get_party_slots(cur_data, party_no)
+    for order, sid in sorted(cur_slots.items()):
+        if order == 1:
             continue
+        remove_sword(client, party_no, order, sid)
+        battle_sleep()
 
-        logger.info(f"  恢复 serial_id={target_sid}（原槽位{target_order}），清场队伍...")
-
-        # ── 清场：让 target 独占槽位1（队长位）────────────────────────
-        # removesword 无法移除队长（槽1），所以先用 setsword 把 target 换到槽1。
-        # setsword 会做交换：target → 槽1，原队长 → target 原槽位。
-        # 之后再 removesword 移除槽2-6中的所有刀（含被换过来的原队长）。
-        if target_order != 1:
-            logger.debug(f"  setsword：将 serial_id={target_sid} 换至队长位（槽1）")
+    # 逐把换队长跑1-1
+    for i, target_sid in enumerate(low_fatigue_sids):
+        if i > 0:
             set_sword(client, party_no, 1, target_sid)
             battle_sleep()
 
-        # 获取交换后的最新槽位，移除槽2-6全部刀剑
-        cur_data = client.get_conquest_data()
-        cur_slots = get_party_slots(cur_data, party_no)
-        for order, sid in sorted(cur_slots.items()):
-            if order == 1:
-                continue  # 队长位（target_sid）不可移除
-            remove_sword(client, party_no, order, sid)
-            battle_sleep()
-
-        # ── 1-1 循环恢复气力 ──────────────────────────────────────────
         max_rounds = 5
         current_fat = 0
         for round_no in range(1, max_rounds + 1):
             conquest_data = client.get_conquest_data()
             party_info = conquest_data.get("party", {}).get(str(party_no), {})
             fatigue_map = get_party_fatigue(conquest_data, party_info)
-            # 找不到时默认 0（而非100），避免误判为已满而跳过恢复
             current_fat = fatigue_map.get(target_sid, 0)
 
             logger.info(f"  round {round_no}：serial_id={target_sid} 气力={current_fat}")
             if current_fat >= FATIGUE_TARGET:
-                logger.info(f"  serial_id={target_sid} 气力已恢复到 {current_fat}，完成！")
+                logger.info(f"  serial_id={target_sid} 气力恢复完成")
                 break
 
             run_battle_1_1(client, party_no)
         else:
             logger.warning(f"  serial_id={target_sid} 气力恢复超出 {max_rounds} 轮，当前值：{current_fat}")
 
-        # ── 还原：按原快照把队伍恢复原状 ──────────────────────────────
-        # 现状：槽1 = target_sid（队长），其余全空。
-        # 还原顺序：
-        #   1. 若 target 原本不在槽1：先 setsword(1, 原队长) 替换 target 为队长，
-        #      target_sid 被挤回自由池；再 setsword(target_order, target_sid) 归位。
-        #   2. 还原其余各槽。
-        logger.info(f"  将原队伍刀剑归位...")
-        if target_order != 1:
-            original_leader_sid = slots[1]
-            # 把原队长换回槽1，target_sid 被挤出到自由池
-            set_sword(client, party_no, 1, original_leader_sid)
-            battle_sleep()
-            # 把 target 放回原槽
-            set_sword(client, party_no, target_order, target_sid)
-            battle_sleep()
-
-        # 还原其余刀剑（槽1 和 target_order 已处理，跳过）
-        for order, sid in sorted(slots.items()):
-            if order == 1 or order == target_order:
-                continue
-            set_sword(client, party_no, order, sid)
-            battle_sleep()
-
-        # 归位后通过 conquest 刷新 token（setsword 返回 JSON 含 t，但以防万一）
-        client.get_conquest_data()
+    # 全部完成，一次性还原队伍
+    logger.info(f"  部隊{party_no} 还原队伍...")
+    set_sword(client, party_no, 1, slots[1])
+    battle_sleep()
+    for order, sid in sorted(slots.items()):
+        if order == 1:
+            continue
+        set_sword(client, party_no, order, sid)
+        battle_sleep()
+    client.get_conquest_data()
 
     logger.info(f"部隊{party_no} 气力恢复完成")
