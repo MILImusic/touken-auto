@@ -239,11 +239,41 @@ def _enable_network_and_wait_reflect(cdp: CDPClient) -> tuple[str, str] | None:
     return None
 
 
+def _confirm_profile() -> bool:
+    """读取 Chrome Profile 账号信息，让用户确认"""
+    import pathlib
+    prefs_path = pathlib.Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR / "Preferences"
+    if not prefs_path.exists():
+        logger.warning(f"找不到 Profile 配置：{prefs_path}")
+        return True  # 找不到就跳过确认
+
+    try:
+        prefs = json.loads(prefs_path.read_text())
+        accounts = prefs.get("account_info", [])
+        profile_name = prefs.get("profile", {}).get("name", "未知")
+
+        if accounts:
+            email = accounts[0].get("email", "未知")
+            name = accounts[0].get("full_name", "未知")
+            logger.info(f"Chrome Profile：{profile_name}（{email} / {name}）")
+        else:
+            logger.info(f"Chrome Profile：{profile_name}（无账号信息）")
+
+        confirm = input("确认使用此账号登录？(Y/n): ").strip().lower()
+        return confirm != "n"
+    except Exception as e:
+        logger.warning(f"读取 Profile 失败：{e}")
+        return True
+
+
 def auto_get_token() -> tuple[str, str]:
     """
     全自动获取 token。
     返回 (sword, fuel_csrf_token)。
     """
+    if not _confirm_profile():
+        raise RuntimeError("用户取消登录")
+
     chrome_proc = None
     cdp = None
 
