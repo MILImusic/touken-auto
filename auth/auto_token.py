@@ -291,9 +291,9 @@ def _confirm_profile() -> bool:
             logger.info(f"Chrome Profile：{profile_name}（{email} / {name}）")
         else:
             logger.info(f"Chrome Profile：{profile_name}（无账号信息）")
+            return False
 
-        confirm = input("确认使用此账号登录？(Y/n): ").strip().lower()
-        return confirm != "n"
+        return True
     except Exception as e:
         logger.warning(f"读取 Profile 失败：{e}")
         return True
