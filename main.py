@@ -63,17 +63,24 @@ MODES = {
 
 
 def get_credentials() -> tuple[str, str]:
-    """
-    从 DevTools Network → 最新的 reflect?uid= → Response Headers 复制两个值：
-      sword          = Set-Cookie: sword=...
-      fuel_csrf_token = Set-Cookie: fuel_csrf_token=...
-    """
-    print("\n请从 DevTools Network → 最新的 reflect → Response Headers 复制：")
-    sword = input("  sword: ").strip()
-    t     = input("  fuel_csrf_token: ").strip()
-    if not sword or not t:
-        raise ValueError("sword 和 t 不能为空")
-    return sword, t
+    """获取凭证：自动登录或手动输入"""
+    R = _C["reset"]
+    print(f"\n{_C['bold']}获取凭证：{R}")
+    print(f"  {_C['green']}1. 自动登录（Chrome + Google OAuth）{R}")
+    print(f"  {_C['dim']}2. 手动输入（从 DevTools 复制）{R}")
+
+    choice = input("选择（1/2）: ").strip()
+
+    if choice == "1":
+        from auth.auto_token import auto_get_token
+        return auto_get_token()
+    else:
+        print("\n请从 DevTools Network → 最新的 reflect → Response Headers 复制：")
+        sword = input("  sword: ").strip()
+        t     = input("  fuel_csrf_token: ").strip()
+        if not sword or not t:
+            raise ValueError("sword 和 t 不能为空")
+        return sword, t
 
 
 def select_mode() -> int:

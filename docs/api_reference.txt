@@ -357,8 +357,13 @@ Q3: eventsally status=2 的真实原因？
     URL 格式：/service/login/oauth?sns_type=google&cancel_back_url=...&channel=games
     → 自动跳转 Google OAuth → 自动返回 DMM（Chrome Profile 已记住 Google 账号）
 
-  步骤2：（待确认）点击第一个按钮
-  步骤3：（待确认）点击第二个按钮
+  步骤2：跳转 play.games.dmm.com/game/tohken，游戏在 iframe#game_frame 内
+    iframe src: osapi.dmm.com/gadgets/ifr?aid=825012&...&url=https://www.touken-ranbu.jp/gadget...
+    页面显示绿色箭头按钮（音声注意提示），需点击 iframe 中央
+    无法用 DOM 选择器，需用 CDP Input.dispatchMouseEvent 点击坐标
+
+  步骤3：游戏标题画面，点击"本丸"按钮（iframe 内下半部中央）
+    同样用 CDP Input.dispatchMouseEvent 点击坐标
   步骤4：游戏加载，拦截 reflect?uid= 响应
     从 Set-Cookie 提取 sword 和 fuel_csrf_token
 
