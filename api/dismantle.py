@@ -176,6 +176,11 @@ def _do_composition_for_protected(client: ToukenClient, comp_targets: dict[int, 
         if ranbu >= 10:
             continue
 
+        # 跳过不可操作的保护刀（编队中/远征中/内番中），素材保留等下次
+        if target.get("role_id", 0) != 0:
+            logger.debug(f"  保护刀 serial_id={target_sid} 在编队/远征中，跳过习合")
+            continue
+
         needed = _swords_needed_for_target(target, 10)
         to_feed = materials[:needed]
 
