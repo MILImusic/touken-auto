@@ -79,30 +79,26 @@ class CDPClient:
 
 
 def _prepare_temp_profile() -> str:
-    """复制 Chrome Profile 到临时目录（remote debugging 不能用默认数据目录）"""
-    src = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR
-    dst = Path(TEMP_USER_DATA) / "Default"  # 临时目录用 Default 作为 profile
+    """用符号链接创建临时数据目录（remote debugging 不能用默认数据目录，但需要原始 session）"""
+    temp_dir = Path(TEMP_USER_DATA)
 
-    # 清理旧的临时目录
-    if Path(TEMP_USER_DATA).exists():
-        shutil.rmtree(TEMP_USER_DATA, ignore_errors=True)
+    # 清理旧的
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-    dst.mkdir(parents=True, exist_ok=True)
+    temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # 只复制关键文件（Cookies、Login Data 等），不复制缓存
-    for name in ("Cookies", "Cookies-journal", "Login Data", "Login Data-journal",
-                 "Preferences", "Secure Preferences", "Web Data", "Web Data-journal",
-                 "Local State"):
-        src_file = src / name
-        if src_file.exists():
-            shutil.copy2(src_file, dst / name)
+    # 符号链接 Profile 目录（保留完整 Google 登录 session）
+    src_profile = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR
+    dst_profile = temp_dir / "Default"
+    dst_profile.symlink_to(src_profile)
 
-    # Local State 在上层目录
+    # 复制 Local State（不能 symlink，Chrome 会修改它）
     local_state = Path(CHROME_USER_DATA) / "Local State"
     if local_state.exists():
-        shutil.copy2(local_state, Path(TEMP_USER_DATA) / "Local State")
+        shutil.copy2(local_state, temp_dir / "Local State")
 
-    logger.debug(f"临时 Profile 准备完成：{TEMP_USER_DATA}")
+    logger.debug(f"临时 Profile 准备完成（symlink → {src_profile}）")
     return TEMP_USER_DATA
 
 
