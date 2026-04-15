@@ -23,6 +23,7 @@ from api.repair import run_all_repairs
 from api.composition import run_composition_cycle
 from api.dismantle import run_dismantle_cycle
 from api.sword_manager import run_sword_manager
+from api.fatigue_recovery import run_fatigue_recovery
 from api.practice import run_practice_cycle
 from api.dungeon import run_dungeon_climb, run_dungeon_floor_loop
 from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop, run_sortie_7_3_loop
@@ -57,6 +58,7 @@ MODES = {
     7: "习合模式（领取短刀 + 自动习合到乱舞7）",
     8: "刀解模式（领取非短刀 + 自动刀解释放刀位）",
     9: "综合管理（习合+刀解一体化，刀位满自动腾位）",
+    10: "气力恢复（指定队伍全员跑1-1补满气力）",
 }
 
 
@@ -90,7 +92,9 @@ def select_mode() -> int:
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     print(f"  {_C['magenta']}8. {MODES[8]}{R}")
     print(f"  {_C['magenta']}9. {MODES[9]}{R}")
+    print(f"  {_C['magenta']}10. {MODES[10]}{R}")
     print(f"  {_C['dim']}支持接力：如 9 3:88 表示先跑模式9再跑模式3(88层){R}")
+    print(f"  {_C['dim']}         10:3 表示恢复队伍3气力{R}")
     while True:
         raw = input("输入模式: ").strip()
         if not raw:
@@ -148,7 +152,7 @@ def _parse_mode_queue(raw: str) -> list[tuple[int, dict]] | None:
         else:
             mode_str, param_str = part, ""
 
-        if mode_str not in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+        if mode_str not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"):
             return None
 
         mode = int(mode_str)
@@ -160,6 +164,8 @@ def _parse_mode_queue(raw: str) -> list[tuple[int, dict]] | None:
                     params["start_layer"] = val
                 elif mode == 3:
                     params["layer_id"] = val
+                elif mode == 10:
+                    params["party_no"] = val
             except ValueError:
                 return None
 
@@ -239,6 +245,10 @@ def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None 
     elif mode == 9:
         run_sword_manager(client)
 
+    elif mode == 10:
+        party_no = params.get("party_no") or int(input("请输入队伍编号（1-5）: ").strip())
+        run_fatigue_recovery(client, party_no)
+
 
 def _send_mode_summary(mode: int, error: Exception | None = None) -> None:
     """模式完成后发 Telegram 汇总"""
@@ -274,6 +284,7 @@ def _show_mode_menu() -> None:
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     print(f"  {_C['magenta']}8. {MODES[8]}{R}")
     print(f"  {_C['magenta']}9. {MODES[9]}{R}")
+    print(f"  {_C['magenta']}10. {MODES[10]}{R}")
 
 
 def main():
