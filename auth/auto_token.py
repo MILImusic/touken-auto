@@ -64,7 +64,7 @@ def _launch_chrome() -> subprocess.Popen:
         "--no-first-run",
         "--no-default-browser-check",
         GAME_URL,
-    ])
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     logger.info("Chrome 已启动")
     return proc
 
