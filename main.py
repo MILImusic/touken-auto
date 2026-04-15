@@ -326,6 +326,29 @@ def main():
                     _run_mode(client, mode, state, params)
                 except KeyboardInterrupt:
                     logger.info("用户中断（Ctrl+C），当前模式结束")
+                except RuntimeError as e:
+                    if "status=91" in str(e):
+                        # token 过期，自动重新登录
+                        logger.info("Token 过期（status=91），自动重新登录...")
+                        _notify_telegram(e)
+                        try:
+                            from auth.auto_token import auto_get_token
+                            new_sword, new_t = auto_get_token()
+                            client._sword = new_sword
+                            client._csrf_token = new_t
+                            state = client.get_game_state()
+                            handle_leave_requests(client, state)
+                            _daily_done = False  # 新的一天，日常任务需要重新执行
+                            logger.info("自动重新登录成功，继续运行...")
+                            continue  # 重新执行当前模式
+                        except Exception as re_err:
+                            logger.error(f"自动重新登录失败：{re_err}")
+                            error = re_err
+                            _notify_telegram(re_err)
+                    else:
+                        error = e
+                        logger.error(f"模式异常退出：{e}")
+                        _notify_telegram(e)
                 except Exception as e:
                     error = e
                     logger.error(f"模式异常退出：{e}")
