@@ -327,10 +327,27 @@ def main():
                 except KeyboardInterrupt:
                     logger.info("用户中断（Ctrl+C），当前模式结束")
                 except RuntimeError as e:
-                    if "status=91" in str(e):
-                        # token 过期，自动重新登录
-                        logger.info("Token 过期（status=91），自动重新登录...")
+                    err_str = str(e)
+                    if "status=91" in err_str or "status=97" in err_str:
+                        is_maintenance = "status=97" in err_str
+                        reason = "服务器维护（status=97）" if is_maintenance else "Token 过期（status=91）"
+                        logger.info(f"{reason}，准备自动恢复...")
                         _notify_telegram(e)
+
+                        if is_maintenance:
+                            # 等到维护结束（每周二 12:00-15:00）
+                            import datetime
+                            now = datetime.datetime.now()
+                            resume_hour = 15
+                            resume_time = now.replace(hour=resume_hour, minute=5, second=0)
+                            if now < resume_time:
+                                wait_secs = (resume_time - now).total_seconds()
+                                logger.info(f"维护中，等待到 {resume_hour}:05（{int(wait_secs//60)} 分钟后）...")
+                                time.sleep(wait_secs)
+                            else:
+                                logger.info("已过维护时间，30秒后重试...")
+                                time.sleep(30)
+
                         try:
                             from auth.auto_token import auto_get_token
                             new_sword, new_t = auto_get_token()
@@ -338,7 +355,8 @@ def main():
                             client._csrf_token = new_t
                             state = client.get_game_state()
                             handle_leave_requests(client, state)
-                            _daily_done = False  # 新的一天，日常任务需要重新执行
+                            if is_maintenance or "status=91" in err_str:
+                                _daily_done = False
                             logger.info("自动重新登录成功，继续运行...")
                             continue  # 重新执行当前模式
                         except Exception as re_err:
