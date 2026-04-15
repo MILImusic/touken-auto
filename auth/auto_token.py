@@ -15,9 +15,7 @@
 
 import json
 import time
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 import httpx
@@ -78,47 +76,29 @@ class CDPClient:
         self.ws.close()
 
 
-def _prepare_temp_profile() -> str:
-    """用符号链接创建临时数据目录（remote debugging 不能用默认数据目录，但需要原始 session）"""
-    temp_dir = Path(TEMP_USER_DATA)
-
-    # 清理旧的
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    # 符号链接 Profile 目录（保留完整 Google 登录 session）
-    src_profile = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR
-    dst_profile = temp_dir / "Default"
-    dst_profile.symlink_to(src_profile)
-
-    # 复制 Local State（不能 symlink，Chrome 会修改它）
-    local_state = Path(CHROME_USER_DATA) / "Local State"
-    if local_state.exists():
-        shutil.copy2(local_state, temp_dir / "Local State")
-
-    logger.debug(f"临时 Profile 准备完成（symlink → {src_profile}）")
-    return TEMP_USER_DATA
-
-
 def _launch_chrome() -> subprocess.Popen:
-    """启动 Chrome 带 remote debugging（使用临时 Profile）"""
-    # 先杀掉已有的 Chrome 进程（避免端口冲突）
-    subprocess.run(["pkill", "-f", "Google Chrome"], capture_output=True)
-    time.sleep(2)
+    """启动 Chrome 带 remote debugging（使用原始 Profile）"""
+    # 彻底杀掉所有 Chrome 进程
+    subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
+    subprocess.run(["killall", "-9", "Google Chrome"], capture_output=True)
+    time.sleep(3)
 
-    temp_data = _prepare_temp_profile()
+    # 清理 Chrome 锁文件（避免 "already running" 检测）
+    lock_file = Path(CHROME_USER_DATA) / "SingletonLock"
+    if lock_file.exists():
+        lock_file.unlink(missing_ok=True)
 
     proc = subprocess.Popen([
         CHROME_PATH,
         f"--remote-debugging-port={CDP_PORT}",
-        f"--user-data-dir={temp_data}",
+        f"--user-data-dir={CHROME_USER_DATA}",
+        f"--profile-directory={CHROME_PROFILE_DIR}",
+        "--remote-allow-origins=*",
         "--no-first-run",
         "--no-default-browser-check",
         GAME_URL,
     ])
-    logger.info("Chrome 已启动（临时 Profile）")
+    logger.info("Chrome 已启动")
     return proc
 
 
