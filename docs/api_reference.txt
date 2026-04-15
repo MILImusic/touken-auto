@@ -353,23 +353,27 @@ Q3: eventsally status=2 的真实原因？
   → 自动跳转：https://accounts.dmm.com/service/login/password/=/.../channel=games
 
   步骤1：DMM 登录页，点击 Google 登录
-    选择器：a[href*="sns_type=google"]
+    模板匹配 auth/templates/google_login.png（opencv cv2.matchTemplate）
     URL 格式：/service/login/oauth?sns_type=google&cancel_back_url=...&channel=games
-    → 自动跳转 Google OAuth → 自动返回 DMM（Chrome Profile 已记住 Google 账号）
+    注意：Google OAuth 在新标签页打开，需 Cmd+Shift+] 切换
 
   步骤2：跳转 play.games.dmm.com/game/tohken，游戏在 iframe#game_frame 内
-    iframe src: osapi.dmm.com/gadgets/ifr?aid=825012&...&url=https://www.touken-ranbu.jp/gadget...
-    页面显示绿色箭头按钮（音声注意提示），需点击 iframe 中央
-    无法用 DOM 选择器，需用 CDP Input.dispatchMouseEvent 点击坐标
+    模板匹配 auth/templates/green_arrow.png 点击绿色箭头
 
-  步骤3：游戏标题画面，点击"本丸"按钮（iframe 内下半部中央）
-    同样用 CDP Input.dispatchMouseEvent 点击坐标
-  步骤4：游戏加载，拦截 reflect?uid= 响应
-    从 Set-Cookie 提取 sword 和 fuel_csrf_token
+  步骤3：游戏标题画面，模板匹配 auth/templates/honmaru.png 点击"本丸"按钮
+
+  步骤4：从 Chrome --log-net-log 文件中正则提取 sword 和 fuel_csrf_token
+
+  实现方案（2026-04-15 确认）：
+    - CDP/remote-debugging 不可用（Chrome 不允许默认数据目录开 debugging）
+    - 改用：opencv 模板匹配 + pyautogui 鼠标模拟 + net-log 抓 token
+    - Retina 处理：截图为物理分辨率，匹配后坐标除以2得逻辑坐标
+    - pyautogui.locateOnScreen 在 Retina 上有 bug，直接用 cv2.matchTemplate
 
   Chrome 配置：
-    Profile 路径：/Users/toevskyastora/Library/Application Support/Google/Chrome/Profile 1
-    启动参数：--remote-debugging-port=9222 --profile-directory="Profile 1"
+    Profile：/Users/toevskyastora/Library/Application Support/Google/Chrome/Profile 1
+    启动参数：--profile-directory="Profile 1" --log-net-log=/tmp/touken-chrome-net.json
+    模板图片：auth/templates/（google_login.png, green_arrow.png, honmaru.png）
 
 ■ 白山吉光编成变更（2026-04-04）
   部隊1 为专属治疗队，白山吉光常驻槽1，平时只放白山（槽2-6 空置）。
