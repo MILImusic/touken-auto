@@ -74,11 +74,19 @@ def run_sword_manager(client: ToukenClient) -> None:
         if freed or composed:
             logger.info(f"库存清理完成，刀解 {freed} 把，习合 {composed} 次")
 
+        tantou_exhausted = False  # 短刀领完后不再反复检查
+
         while True:
             did_anything = False
 
             # 第二步：领取+习合短刀
-            received_count, new_sword_ids = _receive_tantou(client)
+            if tantou_exhausted:
+                received_count, new_sword_ids = 0, set()
+            else:
+                received_count, new_sword_ids = _receive_tantou(client)
+                if received_count == 0 and not new_sword_ids:
+                    tantou_exhausted = True
+                    logger.info("短刀已领完，后续跳过短刀检查")
             if new_sword_ids - tantou_sword_ids:
                 tantou_sword_ids.update(new_sword_ids)
                 _save_tantou_db(tantou_sword_ids)
