@@ -147,6 +147,10 @@ def auto_get_token() -> tuple[str, str]:
         clicked = _find_and_click("google_login.png", "Google 登录", timeout=15)
         if clicked:
             time.sleep(8)
+            # Google OAuth 可能在新标签页打开，切换到最新标签页
+            pyautogui.hotkey("command", "shift", "]")
+            logger.debug("切换到最新标签页")
+            time.sleep(2)
         else:
             logger.info("未找到 Google 登录（可能已登录），继续...")
 
