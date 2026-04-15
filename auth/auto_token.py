@@ -4,18 +4,18 @@
 流程：
   1. 启动 Chrome（原始 Profile，不需要 remote debugging）
   2. 导航到游戏页 → DMM 登录页
-  3. pyautogui 截图识别 + 模拟鼠标点击 Google 登录
+  3. 获取 Chrome 窗口位置，按相对坐标点击 Google 登录
   4. 等待跳转回游戏页 → 点击绿色箭头 → 点击本丸
-  5. 从 Chrome net-log 文件解析 reflect 响应的 Set-Cookie → 提取 token
+  5. 从 Chrome net-log 文件解析 reflect 响应 → 提取 token
   6. 关闭 Chrome
 
-依赖：pyautogui, Pillow
+依赖：pyautogui, Pillow, opencv-python-headless
 """
 
 import json
-import time
-import subprocess
 import re
+import subprocess
+import time
 from pathlib import Path
 
 import pyautogui
@@ -27,8 +27,10 @@ CHROME_USER_DATA = "/Users/toevskyastora/Library/Application Support/Google/Chro
 GAME_URL = "https://play.games.dmm.com/game/tohken"
 NET_LOG_PATH = "/tmp/touken-chrome-net.json"
 
-# 超时
-TOTAL_TIMEOUT = 90  # 整个登录流程最大超时
+# 按钮在 Chrome 窗口中的相对位置（0~1）
+GOOGLE_BTN_REL = (0.49, 0.25)        # DMM 登录页 Google 按钮
+GREEN_ARROW_REL = (0.50, 0.65)       # 游戏页绿色箭头（iframe 内）
+HONMARU_REL = (0.50, 0.75)           # 标题画面本丸按钮
 
 
 def _confirm_profile() -> bool:
@@ -37,33 +39,29 @@ def _confirm_profile() -> bool:
     if not prefs_path.exists():
         logger.warning(f"找不到 Profile 配置：{prefs_path}")
         return False
-
     try:
         prefs = json.loads(prefs_path.read_text())
         accounts = prefs.get("account_info", [])
         profile_name = prefs.get("profile", {}).get("name", "未知")
-
         if accounts:
             email = accounts[0].get("email", "未知")
             name = accounts[0].get("full_name", "未知")
             logger.info(f"Chrome Profile：{profile_name}（{email} / {name}）")
+            return True
         else:
-            logger.info(f"Chrome Profile：{profile_name}（无账号信息）")
+            logger.warning(f"Chrome Profile：{profile_name}（无账号信息）")
             return False
-
-        return True
     except Exception as e:
         logger.warning(f"读取 Profile 失败：{e}")
         return False
 
 
 def _launch_chrome() -> subprocess.Popen:
-    """启动 Chrome（原始 Profile + net-log，无需 remote debugging）"""
+    """启动 Chrome（原始 Profile + net-log）"""
     subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
     subprocess.run(["killall", "-9", "Google Chrome"], capture_output=True)
     time.sleep(3)
 
-    # 清理锁文件和旧日志
     lock_file = Path(CHROME_USER_DATA) / "SingletonLock"
     lock_file.unlink(missing_ok=True)
     Path(NET_LOG_PATH).unlink(missing_ok=True)
@@ -81,80 +79,40 @@ def _launch_chrome() -> subprocess.Popen:
     return proc
 
 
-def _wait_and_click_google_login() -> bool:
-    """等待 DMM 登录页出现，用 pyautogui 点击 Google 登录按钮"""
-    logger.info("等待 DMM 登录页...")
-
-    for attempt in range(20):
-        time.sleep(1)
-        try:
-            screenshot = pyautogui.screenshot()
-            # 在截图中找 "Google" 文字区域（登录按钮在页面上方）
-            # 使用 pyautogui.locateOnScreen 配合模板图片更可靠
-            # 先用简单方案：找到后点击
-            location = pyautogui.locateOnScreen(
-                str(Path(__file__).parent / "templates" / "google_login.png"),
-                confidence=0.7,
-            )
-            if location:
-                center = pyautogui.center(location)
-                logger.info(f"找到 Google 登录按钮：({center.x}, {center.y})")
-                pyautogui.moveTo(center.x, center.y, duration=0.3)
-                time.sleep(0.2)
-                pyautogui.click()
-                return True
-        except Exception:
-            pass
-
-    return False
+def _get_chrome_window() -> tuple[int, int, int, int] | None:
+    """用 AppleScript 获取 Chrome 前台窗口的 (left, top, width, height)"""
+    script = '''
+    tell application "Google Chrome"
+        set b to bounds of front window
+        return (item 1 of b as string) & "," & (item 2 of b as string) & "," & (item 3 of b as string) & "," & (item 4 of b as string)
+    end tell
+    '''
+    try:
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5)
+        parts = [int(x.strip()) for x in result.stdout.strip().split(",")]
+        left, top, right, bottom = parts
+        return left, top, right - left, bottom - top
+    except Exception as e:
+        logger.warning(f"获取 Chrome 窗口失败：{e}")
+        return None
 
 
-def _wait_and_click_arrow() -> bool:
-    """等待游戏页面加载，点击绿色箭头"""
-    logger.info("等待绿色箭头...")
+def _click_in_window(rel_x: float, rel_y: float, label: str) -> bool:
+    """在 Chrome 窗口的相对位置点击"""
+    win = _get_chrome_window()
+    if not win:
+        return False
 
-    for attempt in range(30):
-        time.sleep(1)
-        try:
-            location = pyautogui.locateOnScreen(
-                str(Path(__file__).parent / "templates" / "green_arrow.png"),
-                confidence=0.7,
-            )
-            if location:
-                center = pyautogui.center(location)
-                logger.info(f"找到绿色箭头：({center.x}, {center.y})")
-                pyautogui.moveTo(center.x, center.y, duration=0.3)
-                time.sleep(0.2)
-                pyautogui.click()
-                return True
-        except Exception:
-            pass
+    left, top, width, height = win
+    x = left + int(width * rel_x)
+    y = top + int(height * rel_y)
 
-    return False
-
-
-def _wait_and_click_honmaru() -> bool:
-    """等待标题画面，点击本丸按钮"""
-    logger.info("等待本丸按钮...")
-
-    for attempt in range(30):
-        time.sleep(1)
-        try:
-            location = pyautogui.locateOnScreen(
-                str(Path(__file__).parent / "templates" / "honmaru.png"),
-                confidence=0.7,
-            )
-            if location:
-                center = pyautogui.center(location)
-                logger.info(f"找到本丸按钮：({center.x}, {center.y})")
-                pyautogui.moveTo(center.x, center.y, duration=0.3)
-                time.sleep(0.2)
-                pyautogui.click()
-                return True
-        except Exception:
-            pass
-
-    return False
+    logger.debug(f"点击 {label}：窗口({left},{top},{width}x{height}) → 坐标({x},{y})")
+    pyautogui.moveTo(x, y, duration=0.3)
+    time.sleep(0.2)
+    pyautogui.click()
+    logger.info(f"已点击 {label}（{x}, {y}）")
+    return True
 
 
 def _extract_token_from_netlog() -> tuple[str, str] | None:
@@ -162,39 +120,19 @@ def _extract_token_from_netlog() -> tuple[str, str] | None:
     log_path = Path(NET_LOG_PATH)
     if not log_path.exists():
         return None
-
     try:
         content = log_path.read_text(errors="ignore")
-
-        # net-log 是 JSON 格式，但可能很大且不完整（Chrome 还在写）
-        # 直接用正则在原始文本中搜索 Set-Cookie
-        sword = ""
-        token = ""
-
-        # 找 sword cookie
         sword_matches = re.findall(r'sword=([a-zA-Z0-9]+)', content)
-        if sword_matches:
-            sword = sword_matches[-1]  # 取最后一个（最新的）
-
-        # 找 fuel_csrf_token cookie
         token_matches = re.findall(r'fuel_csrf_token=([a-fA-F0-9]+)', content)
-        if token_matches:
-            token = token_matches[-1]
-
-        if sword and token:
-            return sword, token
-
+        if sword_matches and token_matches:
+            return sword_matches[-1], token_matches[-1]
     except Exception as e:
         logger.debug(f"解析 net-log 失败：{e}")
-
     return None
 
 
 def auto_get_token() -> tuple[str, str]:
-    """
-    全自动获取 token。
-    返回 (sword, fuel_csrf_token)。
-    """
+    """全自动获取 token"""
     if not _confirm_profile():
         raise RuntimeError("Chrome Profile 确认失败")
 
@@ -206,23 +144,15 @@ def auto_get_token() -> tuple[str, str]:
         time.sleep(5)
 
         # 2. 点击 Google 登录（如果在 DMM 登录页）
-        #    如果已登录会直接跳到游戏页，这一步会超时跳过
-        clicked_google = _wait_and_click_google_login()
-        if clicked_google:
-            logger.info("已点击 Google 登录，等待跳转...")
-            time.sleep(8)
-        else:
-            logger.info("未找到 Google 登录按钮（可能已登录），继续...")
+        _click_in_window(*GOOGLE_BTN_REL, "Google 登录")
+        time.sleep(8)
 
         # 3. 点击绿色箭头
-        if not _wait_and_click_arrow():
-            logger.warning("未找到绿色箭头，尝试继续...")
-
-        time.sleep(3)
+        _click_in_window(*GREEN_ARROW_REL, "绿色箭头")
+        time.sleep(5)
 
         # 4. 点击本丸
-        if not _wait_and_click_honmaru():
-            logger.warning("未找到本丸按钮，尝试继续...")
+        _click_in_window(*HONMARU_REL, "本丸")
 
         # 5. 等待 token 出现在 net-log 中
         logger.info("等待 token...")
@@ -244,8 +174,6 @@ def auto_get_token() -> tuple[str, str]:
             except subprocess.TimeoutExpired:
                 chrome_proc.kill()
             logger.info("Chrome 已关闭")
-
-        # 清理 net-log
         Path(NET_LOG_PATH).unlink(missing_ok=True)
 
 
