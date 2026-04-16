@@ -219,17 +219,19 @@ def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None 
             logger.info("日常任务本次 session 已执行，跳过")
 
     if mode == 1:
-        start_layer = params.get("start_layer") or int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
+        if "start_layer" not in params:
+            params["start_layer"] = int(input("请输入当前地下城层数（爬楼起始层）: ").strip())
         _ensure_daily()
-        run_dungeon_climb(client, start_layer=start_layer)
+        run_dungeon_climb(client, start_layer=params["start_layer"])
 
     elif mode == 2:
         _ensure_daily()
 
     elif mode == 3:
-        layer_id = params.get("layer_id") or int(input("请输入循环层数（如 88）: ").strip())
+        if "layer_id" not in params:
+            params["layer_id"] = int(input("请输入循环层数（如 88）: ").strip())
         _ensure_daily()
-        run_dungeon_floor_loop(client, layer_id=layer_id)
+        run_dungeon_floor_loop(client, layer_id=params["layer_id"])
 
     elif mode == 4:
         _ensure_daily()
@@ -253,8 +255,9 @@ def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None 
         run_sword_manager(client)
 
     elif mode == 10:
-        party_no = params.get("party_no") or int(input("请输入队伍编号（1-5）: ").strip())
-        run_fatigue_recovery(client, party_no)
+        if "party_no" not in params:
+            params["party_no"] = int(input("请输入队伍编号（1-5）: ").strip())
+        run_fatigue_recovery(client, params["party_no"])
 
 
 def _send_mode_summary(mode: int, error: Exception | None = None) -> None:
