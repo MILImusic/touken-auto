@@ -295,6 +295,7 @@ def _show_mode_menu() -> None:
 
 
 def main():
+    global _daily_done
     sword, initial_t = get_credentials()
     queue = select_mode()  # 返回 [(mode, params), ...]
 
@@ -318,10 +319,13 @@ def main():
             logger.info(f"接力模式：{' → '.join(MODES.get(m, str(m)) for m, _ in queue)}")
 
         while True:
-            # 执行队列中的模式
-            for mode, params in queue:
+            # 执行队列中的模式（用索引而非 for-in，方便 token 失效后原地重跑）
+            i = 0
+            while i < len(queue):
+                mode, params = queue[i]
                 logger.info(f"运行模式：{MODES.get(mode, str(mode))}")
                 error = None
+                retry_same_mode = False
                 try:
                     _run_mode(client, mode, state, params)
                 except KeyboardInterrupt:
@@ -357,8 +361,8 @@ def main():
                             handle_leave_requests(client, state)
                             if is_maintenance or "status=91" in err_str:
                                 _daily_done = False
-                            logger.info("自动重新登录成功，继续运行...")
-                            continue  # 重新执行当前模式
+                            logger.info(f"自动重新登录成功，继续执行模式 {mode}（{MODES.get(mode, str(mode))}）...")
+                            retry_same_mode = True  # 不递增 i，下轮 while 重跑当前 mode
                         except Exception as re_err:
                             logger.error(f"自动重新登录失败：{re_err}")
                             error = re_err
@@ -372,9 +376,14 @@ def main():
                     logger.error(f"模式异常退出：{e}")
                     _notify_telegram(e)
 
+                if retry_same_mode:
+                    continue  # 不 i+=1，重跑当前 mode
+
                 # 接力模式中每个模式完成发 Telegram
                 if len(queue) > 1:
                     _send_mode_summary(mode, error)
+
+                i += 1
 
             # 队列执行完，等待选择下一个
             logger.info(f"全部模式完成，{NEXT_MODE_TIMEOUT // 60} 分钟内可选择下一个模式，超时自动退出")
