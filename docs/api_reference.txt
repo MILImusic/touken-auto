@@ -10,9 +10,17 @@
 
 【status 错误码】
   status=0   → 正常
-  status=91  → session 失效（次日更新/重新登录），需重新获取 sword/token
-  status=97  → 服务器维护中，所有端点均返回此值，程序应立即停止
+  status=91  → session 失效（次日更新/重新登录），主循环已接管：
+               自动调用 auto_get_token() 重新登录，然后原地重跑当前 mode
+  status=97  → 服务器维护中（每周二 12:00-15:00），主循环已接管：
+               自动等到 15:05，再 auto_get_token() 重新登录，原地重跑当前 mode
   其他非0值  → 各端点含义不同（见具体端点说明）
+
+  自动恢复机制（main.py 主循环）：
+    - 队列用 while+索引而非 for-in，token 失效后 retry_same_mode=True
+      不递增索引，下轮 while 重跑当前 mode（不会跳到下一个 mode）
+    - 重新登录成功后重置 _daily_done=False，让日常任务重跑
+      （main() 内必须 `global _daily_done` 否则只是局部赋值，模块标志不变）
 
 -------------------------------------------------------------------
 端点               | 对应页面/操作
