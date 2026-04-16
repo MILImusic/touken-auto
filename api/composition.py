@@ -348,19 +348,27 @@ def _composition_loop(client: ToukenClient, known_tantou_sword_ids: set[int]) ->
         protected_targets: dict[int, list[dict]] = {}
         material_pool: dict[int, list[dict]] = {}
 
-        # 不可用的刀：编队中（role_id != 0）或内番中（duty 列表）
+        # 内番中的刀（duty 列表）
         duty_sids = set(comp_data.get("duty", []))
 
         for sid_str, sword in all_swords.items():
             sword_id = sword.get("sword_id")
             if sword_id not in tantou_sword_ids:
                 continue
-            if sword.get("role_id", 0) != 0 or sword.get("serial_id") in duty_sids:
-                continue
+
+            in_duty = sword.get("serial_id") in duty_sids
+            in_team = sword.get("role_id", 0) != 0
 
             if sword.get("protect", 0) >= 1 and sword.get("ranbu_level", 0) < TARGET_RANBU_LEVEL:
+                # 保护刀作为目标：只是接收经验不会被销毁，
+                # 在队也能喂，只要不在内番中即可
+                if in_duty:
+                    continue
                 protected_targets.setdefault(sword_id, []).append(sword)
             elif sword.get("protect", 0) == 0:
+                # 未保护刀作为素材：会被销毁，必须空闲
+                if in_team or in_duty:
+                    continue
                 material_pool.setdefault(sword_id, []).append(sword)
 
         # 素材按 ranbu_level 升序（低的先被喂掉）
