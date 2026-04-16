@@ -365,6 +365,9 @@ def main():
                             if is_maintenance or "status=91" in err_str:
                                 _daily_done = False
                             logger.info(f"自动重新登录成功，继续执行模式 {mode}（{MODES.get(mode, str(mode))}）...")
+                            _send_telegram(
+                                f"✓ 自动恢复成功（{reason}）\n继续执行模式 {mode}：{MODES.get(mode, str(mode))}"
+                            )
                             retry_same_mode = True  # 不递增 i，下轮 while 重跑当前 mode
                         except Exception as re_err:
                             logger.error(f"自动重新登录失败：{re_err}")
@@ -419,14 +422,11 @@ def _beep(sound: str = "Basso") -> None:
         pass
 
 
-def _notify_telegram(error: Exception) -> None:
-    """报错时发送 Telegram 通知，失败静默"""
+def _send_telegram(text: str) -> None:
+    """发送 Telegram 文本通知，失败静默"""
     if not TELEGRAM_BOT_TOKEN:
         return
     try:
-        tb = traceback.format_exception(error)
-        tb_short = "".join(tb[-3:])[:1000]
-        text = f"⚠ 刀剣乱舞脚本异常退出\n\n{type(error).__name__}: {error}\n\n{tb_short}"
         httpx.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
@@ -434,6 +434,13 @@ def _notify_telegram(error: Exception) -> None:
         )
     except Exception:
         pass
+
+
+def _notify_telegram(error: Exception) -> None:
+    """报错时发送 Telegram 通知，失败静默"""
+    tb = traceback.format_exception(error)
+    tb_short = "".join(tb[-3:])[:1000]
+    _send_telegram(f"⚠ 刀剣乱舞脚本异常退出\n\n{type(error).__name__}: {error}\n\n{tb_short}")
 
 
 if __name__ == "__main__":
