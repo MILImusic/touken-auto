@@ -127,8 +127,18 @@ def _extract_token_from_netlog() -> tuple[str, str] | None:
         content = log_path.read_text(errors="ignore")
         sword_matches = re.findall(r'sword=([a-zA-Z0-9]+)', content)
         token_matches = re.findall(r'fuel_csrf_token=([a-fA-F0-9]+)', content)
+        if sword_matches:
+            unique_swords = list(dict.fromkeys(sword_matches))
+            logger.debug(
+                f"net-log {len(content)//1024}KB — "
+                f"sword: {len(sword_matches)} 匹配, {len(unique_swords)} 唯一值: "
+                f"{[s[:12]+'...' for s in unique_swords]}"
+            )
         if sword_matches and token_matches:
             return sword_matches[-1], token_matches[-1]
+        elif sword_matches:
+            # 只有 sword 没有 fuel_csrf_token
+            return sword_matches[-1], ""
     except Exception as e:
         logger.debug(f"解析 net-log 失败：{e}")
     return None
@@ -197,21 +207,37 @@ def auto_get_token() -> tuple[str, str]:
         # 3. 点击本丸
         _find_and_click("honmaru.png", "本丸", timeout=30)
 
-        # 4. 等待 sword 出现在 net-log
-        logger.info("等待 sword...")
+        # 4. 等游戏完全加载（本丸后游戏会调 home/index 等多个 API，
+        #    net-log 需要足够时间刷盘才有完整数据）
+        logger.info("等待游戏完全加载（15秒）...")
+        time.sleep(15)
+
+        # 5. 提取 token，等待稳定（游戏空闲后 token 不再变化）
+        logger.info("提取 token...")
+        last_result: tuple[str, str] | None = None
+        stable_count = 0
         for _ in range(30):
-            time.sleep(1)
+            time.sleep(2)
             result = _extract_token_from_netlog()
-            if result:
-                sword = result[0]
-                logger.info(f"sword 获取成功！sword={sword[:20]}...")
+            if not result or not result[1]:
+                continue
+            if last_result and result[0] == last_result[0] and result[1] == last_result[1]:
+                stable_count += 1
+                if stable_count >= 2:  # 连续 2 次（4秒）相同 → 游戏已空闲
+                    sword, token = result
+                    logger.info(f"Token 已稳定！sword={sword[:20]}...")
+                    return sword, token
+            else:
+                last_result = result
+                stable_count = 0
 
-                # 5. Chrome 还活着 → 调 startup() 建立脚本自己的 session
-                #    （杀掉 Chrome 后 sword session 会被服务器注销）
-                token = _call_startup(sword)
-                return sword, token
+        # 兜底：用最后一次的结果
+        if last_result and last_result[1]:
+            sword, token = last_result
+            logger.warning(f"Token 未完全稳定，使用最新值：sword={sword[:20]}...")
+            return sword, token
 
-        raise RuntimeError("等待 sword 超时")
+        raise RuntimeError("等待 token 超时")
 
     finally:
         if chrome_proc:
