@@ -112,6 +112,46 @@ def select_mode() -> int:
         print("  格式错误，示例：9 3:88 或单个数字如 3")
 
 
+def _register_names_from_state(state: dict) -> None:
+    """从 home/index 响应的 sword 数据中提取刀名，补全名字库"""
+    from api.composition import register_sword_names, get_sword_name
+    swords = state.get("sword", {})
+    if not swords:
+        return
+    # 检查是否有 name 字段（取第一把看看）
+    sample = next(iter(swords.values()), {})
+    name_field = None
+    for field in ("name", "sword_name"):
+        if field in sample:
+            name_field = field
+            break
+    if not name_field:
+        # home/index 也没有 name 字段，打一次 debug 日志
+        extra = set(sample.keys()) - {
+            "serial_id", "sword_id", "protect", "ranbu_level", "ranbu_exp",
+            "rarity", "role_id", "hp", "hp_max", "level", "fatigue",
+            "status", "equip_serial_id1", "equip_serial_id2",
+            "equip_serial_id3", "equip_serial_id4",
+        }
+        # 只在有未知 sword_id 时打日志，避免重复刷屏
+        unknown_count = sum(
+            1 for s in swords.values()
+            if get_sword_name(s.get("sword_id", 0)) == str(s.get("sword_id", 0))
+        )
+        if unknown_count > 0 and extra:
+            logger.debug(f"home/index sword 无 name 字段，额外字段: {extra}（{unknown_count} 把刀缺名字）")
+        return
+    names = {}
+    for sword in swords.values():
+        sid = sword.get("sword_id")
+        name = sword.get(name_field, "")
+        if sid and name:
+            names[sid] = name
+    if names:
+        register_sword_names(names)
+        logger.info(f"从 home/index 补全 {len(names)} 种刀名")
+
+
 def handle_leave_requests(client: ToukenClient, state: dict) -> None:
     """
     自动拒绝登录时等待修行的访客刀剑。
@@ -312,6 +352,10 @@ def main():
                 "sword / token 已过期，请重新从 DevTools 复制凭证"
             )
         handle_leave_requests(client, state)
+
+        # 从 home/index 的 sword 数据尝试补全刀名库
+        _register_names_from_state(state)
+
         res = state["resource"]
         logger.info(
             f"资源 — 木炭:{res['charcoal']}  玉钢:{res['steel']}  "

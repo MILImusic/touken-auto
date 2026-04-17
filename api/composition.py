@@ -199,28 +199,7 @@ def _get_composition_data(client: ToukenClient) -> dict:
     """调用 composition/index 获取所有刀剑数据"""
     resp = client._post("composition/index")
     battle_sleep()
-    data = resp.get("composition", resp)
-
-    # 从响应中提取刀名（如果有 name/sword_name 字段）
-    swords = data.get("sword", {})
-    if swords:
-        sample = next(iter(swords.values()), {})
-        unknown_keys = set(sample.keys()) - {
-            "serial_id", "sword_id", "protect", "ranbu_level", "ranbu_exp",
-            "rarity", "role_id", "hp", "hp_max", "level", "fatigue",
-        }
-        if unknown_keys:
-            logger.debug(f"composition sword 额外字段: {unknown_keys}")
-        names = {}
-        for sword in swords.values():
-            sid = sword.get("sword_id")
-            name = sword.get("name") or sword.get("sword_name", "")
-            if sid and name:
-                names[sid] = name
-        if names:
-            register_sword_names(names)
-
-    return data
+    return resp.get("composition", resp)
 
 
 def _find_tantou_groups(composition_data: dict) -> dict[int, list[dict]]:
