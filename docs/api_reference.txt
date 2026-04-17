@@ -21,8 +21,8 @@
       不递增索引，下轮 while 重跑当前 mode（不会跳到下一个 mode）
     - 重新登录成功后重置 _daily_done=False，让日常任务重跑
       （main() 内必须 `global _daily_done` 否则只是局部赋值，模块标志不变）
-    - auto_get_token() 只取 sword，token 由 startup() 获取全新链
-      （net-log 的 fuel_csrf_token 已被 Chrome 游戏消耗，链式轮换后失效）
+    - auto_get_token() 等游戏跑完 reflect 后抓稳定的 sword + fuel_csrf_token
+      （抓太早会拿到 DMM 登录中间值，startup 不能重复调）
     - _sword 是 property，赋值时自动同步 httpx cookie jar（Double Submit）
     - 恢复成功后发 Telegram 通知（_send_telegram）
     - mode 1/3/10 的运行时参数（layer_id 等）首次 input 后写回 params dict，
@@ -376,17 +376,23 @@ Q3: eventsally status=2 的真实原因？
 
   步骤3：游戏标题画面，模板匹配 auth/templates/honmaru.png 点击"本丸"按钮
 
-  步骤4：从 Chrome --log-net-log 文件中正则提取 sword（session cookie）
+  步骤4（2026-04-17 修正）：等游戏完全加载后从 net-log 提取 sword + fuel_csrf_token
+    点击本丸后等 5 秒，让游戏跑完 startup → index → reflect 全流程，
+    然后轮询 net-log 直到 sword + fuel_csrf_token 连续 4 秒不变（游戏空闲）。
+    正则：sword=([a-zA-Z0-9]+)、fuel_csrf_token=([a-fA-F0-9]+)，取最后一次匹配。
 
-  步骤5（2026-04-17 改）：关闭 Chrome 后，脚本调 startup() 用 sword 获取全新 token 链
-    原方案直接用 net-log 的 fuel_csrf_token，但 CSRF token 是链式轮换的，
-    Chrome 游戏加载时自己消耗了多轮 → 抓到的是过时中间值 → status=1。
-    sword 是 session cookie 不参与轮换，所以只需 sword + startup() 即可。
+    踩坑记录：
+    - 原方案 1 秒就抓 → 游戏连 reflect 都没调到，抓到的是 DMM 登录流程的
+      中间 sword 值，不是游戏 session → status=1
+    - 尝试过 startup() 方案（Chrome 杀前/杀后都试了）→ status=1，
+      因为游戏已经调过 startup，不能重复调
+    - 最终方案：等游戏自己跑完全流程，抓 reflect 响应 Set-Cookie 里的稳定值
+    - mon 请求（DMM 监控心跳）不影响游戏 token 链
 
   实现方案（2026-04-15 确认，2026-04-17 修正 token 获取）：
     - CDP/remote-debugging 不可用（Chrome 不允许默认数据目录开 debugging）
-    - 改用：opencv 模板匹配 + pyautogui 鼠标模拟 + net-log 抓 sword
-    - token 不从 net-log 取，改由 startup() 向服务端请求全新链
+    - 改用：opencv 模板匹配 + pyautogui 鼠标模拟 + net-log 抓 token
+    - 等游戏 API（startup→index→reflect）跑完再抓，不提前抓中间值
     - Retina 处理：截图为物理分辨率，匹配后坐标除以2得逻辑坐标
     - pyautogui.locateOnScreen 在 Retina 上有 bug，直接用 cv2.matchTemplate
 
