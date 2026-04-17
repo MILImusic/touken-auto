@@ -9,12 +9,14 @@
 """
 
 import json
+import os
 import re
 import subprocess
 import time
 from pathlib import Path
 
 import cv2
+import httpx
 import numpy as np
 import pyautogui
 from loguru import logger
@@ -132,6 +134,40 @@ def _extract_token_from_netlog() -> tuple[str, str] | None:
     return None
 
 
+def _call_startup(sword: str) -> str:
+    """
+    Chrome 还活着时调 startup()，用 sword 获取全新 CSRF token 链。
+    杀掉 Chrome 后 sword session 会失效，必须在杀之前调用。
+    """
+    uid = os.getenv("UID", "14052501")
+    server = os.getenv("SERVER", "w021")
+    proxy = os.getenv("PROXY", "http://127.0.0.1:7897")
+
+    resp = httpx.post(
+        f"https://{server}.touken-ranbu.jp/home/startup?uid={uid}",
+        data={"sword": sword},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://www.touken-ranbu.jp",
+            "Referer": "https://www.touken-ranbu.jp/",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/146.0.0.0 Safari/537.36"
+            ),
+        },
+        cookies={"sword": sword},
+        proxy=proxy,
+        timeout=30,
+    )
+    body = resp.json()
+    token = body.get("t")
+    if not token:
+        raise RuntimeError(f"startup 失败: {resp.text[:200]}")
+    logger.info("startup 成功，token chain 已建立")
+    return token
+
+
 def auto_get_token() -> tuple[str, str]:
     """全自动获取 token"""
     if not _confirm_profile():
@@ -161,17 +197,21 @@ def auto_get_token() -> tuple[str, str]:
         # 3. 点击本丸
         _find_and_click("honmaru.png", "本丸", timeout=30)
 
-        # 4. 等待 token
-        logger.info("等待 token...")
+        # 4. 等待 sword 出现在 net-log
+        logger.info("等待 sword...")
         for _ in range(30):
             time.sleep(1)
             result = _extract_token_from_netlog()
             if result:
-                sword, token = result
-                logger.info(f"Token 获取成功！sword={sword[:20]}...")
+                sword = result[0]
+                logger.info(f"sword 获取成功！sword={sword[:20]}...")
+
+                # 5. Chrome 还活着 → 调 startup() 建立脚本自己的 session
+                #    （杀掉 Chrome 后 sword session 会被服务器注销）
+                token = _call_startup(sword)
                 return sword, token
 
-        raise RuntimeError("等待 token 超时")
+        raise RuntimeError("等待 sword 超时")
 
     finally:
         if chrome_proc:
