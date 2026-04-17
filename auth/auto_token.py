@@ -203,10 +203,11 @@ def _get_token_from_chrome_cookies() -> tuple[str, str] | None:
     """从 Chrome Cookie 数据库直接读取 sword + fuel_csrf_token"""
     # 1. Keychain 取 Chrome Safe Storage 密钥
     try:
+        logger.info("请求 Keychain 授权（如弹窗请输入密码）...")
         r = subprocess.run(
             ["security", "find-generic-password", "-w",
              "-s", "Chrome Safe Storage", "-a", "Chrome"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=30,
         )
         if r.returncode != 0:
             return None
