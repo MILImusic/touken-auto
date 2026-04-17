@@ -207,10 +207,9 @@ def auto_get_token() -> tuple[str, str]:
         # 3. 点击本丸
         _find_and_click("honmaru.png", "本丸", timeout=30)
 
-        # 4. 等游戏完全加载（本丸后游戏会调 home/index 等多个 API，
-        #    net-log 需要足够时间刷盘才有完整数据）
-        logger.info("等待游戏完全加载（15秒）...")
-        time.sleep(15)
+        # 4. 等游戏 API 调完（startup → index → reflect 约 3-5 秒）
+        logger.info("等待游戏加载...")
+        time.sleep(5)
 
         # 5. 提取 token，等待稳定（游戏空闲后 token 不再变化）
         logger.info("提取 token...")
