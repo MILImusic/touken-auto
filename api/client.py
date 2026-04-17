@@ -26,9 +26,10 @@ class ToukenClient:
         self.server = server
         self.base = self.BASE_URL.format(server=server)
 
-        # sword 同时是 cookie 和 body 参数
-        self._sword = sword
-        self._csrf_token: str | None = None
+        # sword 同时是 cookie 和 body 参数（Double Submit）
+        # 绕过 setter，因为 _http 尚未创建
+        self.__sword = sword
+        self.__csrf_token: str | None = None
 
         self._http = httpx.Client(
             headers={
@@ -43,6 +44,16 @@ class ToukenClient:
             proxy="http://127.0.0.1:7897",
             timeout=30.0,
         )
+
+    @property
+    def _sword(self) -> str:
+        return self.__sword
+
+    @_sword.setter
+    def _sword(self, value: str):
+        """sword 更新时同步写入 cookie jar（Double Submit）"""
+        self.__sword = value
+        self._http.cookies.set("sword", value)
 
     @property
     def _csrf_token(self) -> str | None:

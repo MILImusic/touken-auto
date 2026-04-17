@@ -73,7 +73,8 @@ def get_credentials() -> tuple[str, str]:
 
     if choice == "1":
         from auth.auto_token import auto_get_token
-        return auto_get_token()
+        sword, _ = auto_get_token()  # 只取 sword，token 由 startup() 获取
+        return sword, None
     else:
         print("\n请从 DevTools Network → 最新的 reflect → Response Headers 复制：")
         sword = input("  sword: ").strip()
@@ -303,7 +304,13 @@ def main():
     queue = select_mode()  # 返回 [(mode, params), ...]
 
     with ToukenClient(sword=sword, uid=UID, server=SERVER) as client:
-        client._csrf_token = initial_t
+        if initial_t:
+            # 手动输入模式：直接用用户提供的 token
+            client._csrf_token = initial_t
+        else:
+            # 自动登录：sword 来自 Chrome net-log，
+            # fuel_csrf_token 可能已被游戏消耗，用 startup() 获取全新 token 链
+            client.startup()
 
         state = client.get_game_state()
         if state.get("status", 0) != 0:
@@ -357,9 +364,9 @@ def main():
 
                         try:
                             from auth.auto_token import auto_get_token
-                            new_sword, new_t = auto_get_token()
-                            client._sword = new_sword
-                            client._csrf_token = new_t
+                            new_sword, _ = auto_get_token()
+                            client._sword = new_sword  # setter 同步 cookie
+                            client.startup()            # 全新 token 链
                             state = client.get_game_state()
                             handle_leave_requests(client, state)
                             if is_maintenance or "status=91" in err_str:
