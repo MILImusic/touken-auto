@@ -242,6 +242,7 @@ def run_all_repairs(
         HP 数据比 conquest 准确（用于 eventsally 失败的队长重伤场景）。
         若不传则用 conquest 数据做重伤检测。
     """
+    global _hakusan_fatigue
     ensure_hakusan_fatigue(client)
 
     conquest_data = client.get_conquest_data()
