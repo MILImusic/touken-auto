@@ -9,14 +9,12 @@
 """
 
 import json
-import os
 import re
 import subprocess
 import time
 from pathlib import Path
 
 import cv2
-import httpx
 import numpy as np
 import pyautogui
 from loguru import logger
@@ -142,40 +140,6 @@ def _extract_token_from_netlog() -> tuple[str, str] | None:
     except Exception as e:
         logger.debug(f"解析 net-log 失败：{e}")
     return None
-
-
-def _call_startup(sword: str) -> str:
-    """
-    Chrome 还活着时调 startup()，用 sword 获取全新 CSRF token 链。
-    杀掉 Chrome 后 sword session 会失效，必须在杀之前调用。
-    """
-    uid = os.getenv("UID", "14052501")
-    server = os.getenv("SERVER", "w021")
-    proxy = os.getenv("PROXY", "http://127.0.0.1:7897")
-
-    resp = httpx.post(
-        f"https://{server}.touken-ranbu.jp/home/startup?uid={uid}",
-        data={"sword": sword},
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Origin": "https://www.touken-ranbu.jp",
-            "Referer": "https://www.touken-ranbu.jp/",
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/146.0.0.0 Safari/537.36"
-            ),
-        },
-        cookies={"sword": sword},
-        proxy=proxy,
-        timeout=30,
-    )
-    body = resp.json()
-    token = body.get("t")
-    if not token:
-        raise RuntimeError(f"startup 失败: {resp.text[:200]}")
-    logger.info("startup 成功，token chain 已建立")
-    return token
 
 
 def auto_get_token() -> tuple[str, str]:
