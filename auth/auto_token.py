@@ -1,15 +1,21 @@
 """
-自动获取 token —— opencv 模板匹配 + pyautogui 鼠标模拟 + net-log 抓 token
+自动获取 token
 
-流程：
-  1. 启动 Chrome（原始 Profile + net-log）
-  2. opencv 截图匹配按钮 → pyautogui 点击
-  3. 从 net-log 解析 reflect → 提取 token
-  4. 关闭 Chrome
+优先级：
+  A. Chrome 已打开游戏 → 直接从 Cookie 数据库读取（秒出，不碰 Chrome）
+  B. Chrome 未打开 → 完整登录流程：
+     1. 启动 Chrome（原始 Profile + net-log）
+     2. opencv 截图匹配按钮 → pyautogui 点击
+     3. 等游戏加载完后从 net-log 提取稳定的 token
+     4. 关闭 Chrome
 """
 
+import ctypes
+import hashlib
 import json
 import re
+import shutil
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -142,8 +148,133 @@ def _extract_token_from_netlog() -> tuple[str, str] | None:
     return None
 
 
+def _check_game_in_chrome() -> bool:
+    """检测 Chrome 是否正在运行游戏页面"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events"\n'
+             '  if not (exists process "Google Chrome") then return "no"\n'
+             'end tell\n'
+             'tell application "Google Chrome"\n'
+             '  repeat with w in windows\n'
+             '    repeat with t in tabs of w\n'
+             '      if URL of t contains "touken-ranbu" or '
+             'URL of t contains "dmm.com/game/tohken" then return "yes"\n'
+             '    end repeat\n'
+             '  end repeat\n'
+             'end tell\n'
+             'return "no"'],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "yes"
+    except Exception:
+        return False
+
+
+def _decrypt_cookie(encrypted_value: bytes, key: bytes) -> str | None:
+    """用 macOS CommonCrypto 解密 Chrome cookie（无需额外 pip 包）"""
+    if not encrypted_value:
+        return None
+    if not encrypted_value.startswith(b"v10"):
+        return encrypted_value.decode("utf-8", errors="ignore")
+
+    encrypted_data = encrypted_value[3:]  # 跳过 v10 前缀
+    iv = b" " * 16
+    try:
+        cc = ctypes.cdll.LoadLibrary("/usr/lib/system/libcommonCrypto.dylib")
+        buf = ctypes.create_string_buffer(len(encrypted_data) + 16)
+        out_len = ctypes.c_size_t(0)
+        # CCCrypt(op, alg, options, key, keyLen, iv, dataIn, dataInLen, dataOut, dataOutAvail, dataOutMoved)
+        rc = cc.CCCrypt(
+            1, 0, 1,                          # kCCDecrypt, AES128, PKCS7Padding
+            key, len(key), iv,
+            encrypted_data, len(encrypted_data),
+            buf, len(buf), ctypes.byref(out_len),
+        )
+        if rc == 0:
+            return buf.raw[: out_len.value].decode("utf-8")
+    except Exception as e:
+        logger.debug(f"CommonCrypto 解密失败: {e}")
+    return None
+
+
+def _get_token_from_chrome_cookies() -> tuple[str, str] | None:
+    """从 Chrome Cookie 数据库直接读取 sword + fuel_csrf_token"""
+    # 1. Keychain 取 Chrome Safe Storage 密钥
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-w",
+             "-s", "Chrome Safe Storage", "-a", "Chrome"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return None
+        chrome_pw = r.stdout.strip().encode("utf-8")
+    except Exception:
+        return None
+
+    # 2. PBKDF2 派生 AES 密钥
+    derived_key = hashlib.pbkdf2_hmac("sha1", chrome_pw, b"saltysalt", 1003, dklen=16)
+
+    # 3. 复制 Cookies 文件（Chrome 运行时锁数据库）
+    for sub in ("Network/Cookies", "Cookies"):
+        db_path = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR / sub
+        if db_path.exists():
+            break
+    else:
+        return None
+
+    tmp = Path("/tmp/touken-chrome-cookies-tmp")
+    try:
+        shutil.copy2(db_path, tmp)
+        for ext in ("-wal", "-journal"):
+            src = Path(str(db_path) + ext)
+            if src.exists():
+                shutil.copy2(src, Path(str(tmp) + ext))
+    except Exception:
+        return None
+
+    # 4. 读取并解密
+    try:
+        conn = sqlite3.connect(str(tmp))
+        rows = conn.execute(
+            "SELECT name, encrypted_value FROM cookies "
+            "WHERE host_key LIKE '%touken-ranbu%' "
+            "AND name IN ('sword', 'fuel_csrf_token')"
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return None
+    finally:
+        tmp.unlink(missing_ok=True)
+        for ext in ("-wal", "-journal"):
+            Path(str(tmp) + ext).unlink(missing_ok=True)
+
+    cookies = {}
+    for name, enc_val in rows:
+        val = _decrypt_cookie(enc_val, derived_key)
+        if val:
+            cookies[name] = val
+
+    sword = cookies.get("sword")
+    csrf = cookies.get("fuel_csrf_token")
+    if sword and csrf:
+        logger.info(f"从 Chrome Cookie 直接获取 token！sword={sword[:20]}...")
+        return sword, csrf
+    return None
+
+
 def auto_get_token() -> tuple[str, str]:
     """全自动获取 token"""
+    # 优先：Chrome 已打开游戏 → 从 Cookie 秒取
+    if _check_game_in_chrome():
+        logger.info("检测到 Chrome 已打开游戏，尝试从 Cookie 获取...")
+        result = _get_token_from_chrome_cookies()
+        if result:
+            return result
+        logger.warning("Cookie 获取失败，回退到完整登录流程...")
+
     if not _confirm_profile():
         raise RuntimeError("Chrome Profile 确认失败")
 
