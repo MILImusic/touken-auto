@@ -57,7 +57,7 @@ def _launch_chrome() -> subprocess.Popen:
     """启动 Chrome"""
     subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
     subprocess.run(["killall", "-9", "Google Chrome"], capture_output=True)
-    time.sleep(3)
+    time.sleep(1)
 
     Path(CHROME_USER_DATA, "SingletonLock").unlink(missing_ok=True)
     Path(NET_LOG_PATH).unlink(missing_ok=True)
@@ -282,36 +282,36 @@ def auto_get_token() -> tuple[str, str]:
 
     try:
         chrome_proc = _launch_chrome()
-        time.sleep(5)
+        time.sleep(3)
 
         # 1. 点击 Google 登录
         clicked = _find_and_click("google_login.png", "Google 登录", timeout=15)
         if clicked:
-            time.sleep(8)
+            time.sleep(4)
             # Google OAuth 可能在新标签页打开，切换到最新标签页
             pyautogui.hotkey("command", "shift", "]")
             logger.debug("切换到最新标签页")
-            time.sleep(2)
+            time.sleep(1)
         else:
             logger.info("未找到 Google 登录（可能已登录），继续...")
 
         # 2. 点击绿色箭头
         _find_and_click("green_arrow.png", "绿色箭头", timeout=30)
-        time.sleep(3)
+        time.sleep(1)
 
         # 3. 点击本丸
         _find_and_click("honmaru.png", "本丸", timeout=30)
 
         # 4. 等游戏 API 调完（startup → index → reflect 约 3-5 秒）
         logger.info("等待游戏加载...")
-        time.sleep(5)
+        time.sleep(3)
 
         # 5. 提取 token，等待稳定（游戏空闲后 token 不再变化）
         logger.info("提取 token...")
         last_result: tuple[str, str] | None = None
         stable_count = 0
         for _ in range(30):
-            time.sleep(2)
+            time.sleep(1)
             result = _extract_token_from_netlog()
             if not result or not result[1]:
                 continue
