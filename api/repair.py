@@ -2,7 +2,7 @@
 重伤治疗模块
 
 架构：
-  白山吉光（HAKUSAN_SWORD_ID=11）永久驻守 部隊1 槽1，作为固定治疗队长。
+  白山吉光（sword_id=164/165，支持極化与未極化）永久驻守 部隊1 槽1，作为固定治疗队长。
   部隊1 平时只放白山，槽2-6 空置。
 
 流程：
@@ -28,7 +28,7 @@ from loguru import logger
 from .client import ToukenClient
 from .battle import remove_sword, set_sword, run_battle_1_1, get_party_slots, battle_sleep
 
-HAKUSAN_SWORD_ID:    int = 11
+HAKUSAN_SWORD_IDS:   set[int] = {164, 165}  # 白山吉光（164=未極化, 165=極化）
 HAKUSAN_PARTY_NO:    int = 1     # 白山吉光专属治疗队（槽1为固定队长，平时只放白山）
 HAKUSAN_MOBILE:      int = 54
 HAKUSAN_FATIGUE_MIN:      int = 25  # 治疗前最低气力（低于此值先补满再治疗）
@@ -81,7 +81,7 @@ def find_hakusan_serial_id(conquest_data: dict) -> int | None:
     slot1 = (party2.get("slot") or {}).get("1") or (party2.get("slot") or {}).get(1)
     if isinstance(slot1, dict):
         slot1_sid = slot1.get("serial_id")
-        if slot1_sid and all_swords.get(slot1_sid, {}).get("sword_id") == HAKUSAN_SWORD_ID:
+        if slot1_sid and all_swords.get(slot1_sid, {}).get("sword_id") in HAKUSAN_SWORD_IDS:
             return slot1_sid
 
     # 回退：任意未出征的白山
@@ -95,7 +95,7 @@ def find_hakusan_serial_id(conquest_data: dict) -> int | None:
 
     candidates = [
         sid for sid, sword in all_swords.items()
-        if sword.get("sword_id") == HAKUSAN_SWORD_ID
+        if sword.get("sword_id") in HAKUSAN_SWORD_IDS
     ]
     if not candidates:
         return None
