@@ -328,10 +328,12 @@ def run_all_repairs(
                 break
         except (ValueError, TypeError):
             pass
-    if hakusan_item_id:
-        logger.info(f"  白山御守 consumable_id={hakusan_item_id}，治疗时循环借用")
-    else:
-        logger.debug("  白山未装备御守，跳过御守借用流程")
+    # 御守借用暂停（equip/setitem 返回 status=2，原因待查）
+    hakusan_item_id = None
+    # if hakusan_item_id:
+    #     logger.info(f"  白山御守 consumable_id={hakusan_item_id}，治疗时循环借用")
+    # else:
+    #     logger.debug("  白山未装备御守，跳过御守借用流程")
 
     # 2. 快照 部隊2 槽2-6（治疗完成后还原）
     heal_slots = get_party_slots(conquest_data, HAKUSAN_PARTY_NO)
