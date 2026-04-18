@@ -206,9 +206,15 @@ def _restart_chrome_and_capture() -> tuple[str, str] | None:
             GAME_URL,
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         logger.info("Chrome 温和重启，等待游戏加载...")
-        time.sleep(5)
+        time.sleep(3)
 
-        # 等 token 稳定（游戏 session 恢复后会自动调 API）
+        # DMM 已登录，跳过 Google OAuth，直接点绿箭头和本丸
+        _find_and_click("green_arrow.png", "绿色箭头", timeout=30)
+        time.sleep(1)
+        _find_and_click("honmaru.png", "本丸", timeout=30)
+        time.sleep(3)
+
+        # 等 token 稳定
         last_result: tuple[str, str] | None = None
         stable_count = 0
         for _ in range(30):
