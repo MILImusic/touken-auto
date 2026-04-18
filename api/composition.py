@@ -361,9 +361,7 @@ def _composition_loop(client: ToukenClient, known_tantou_sword_ids: set[int]) ->
 
             if sword.get("protect", 0) >= 1 and sword.get("ranbu_level", 0) < TARGET_RANBU_LEVEL:
                 # 保护刀作为目标：只是接收经验不会被销毁，
-                # 在队也能喂，只要不在内番中即可
-                if in_duty:
-                    continue
+                # 在队/内番都能喂（内番刀可以习合，只有远征中的不行）
                 protected_targets.setdefault(sword_id, []).append(sword)
             elif sword.get("protect", 0) == 0:
                 # 未保护刀作为素材：会被销毁，必须空闲

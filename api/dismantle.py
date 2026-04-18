@@ -13,7 +13,7 @@
   - 绝不碰 protect >= 1 的刀（不刀解保护刀，习合只是给它喂经验）
   - 同 sword_id 存在保护刀且 ranbu_level < 10 → 留给习合，不刀解
   - 不刀解编队中（role_id != 0）或内番中的刀
-  - 保护刀作为习合目标：只排除内番中的；在队没出征也能喂
+  - 保护刀作为习合目标：在队/内番都能喂（内番刀可以习合，只有远征不行）
 
 配置：
   NON_TANTOU_SWORD_TYPES = "2,6,5,7,3,4,10"
@@ -111,12 +111,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
                 duty_sids.add(val)
 
     # 构建保护刀映射：sword_id → {serial_id, ranbu_level, rarity, ranbu_exp, ...}
-    # 内番中的保护刀无法作为习合目标，先排除
+    # 内番中的刀也可以习合，只有远征中的不行（远征刀由 role_id 和 expedition 状态判断）
     protected_map: dict[int, dict] = {}  # sword_id → 保护刀数据
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
-            if sword.get("serial_id") in duty_sids:
-                continue
             sid = sword.get("sword_id")
             # 取 ranbu_level 最低的保护刀（最需要喂的）
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
@@ -204,12 +202,8 @@ def _do_composition_for_protected(client: ToukenClient, comp_targets: dict[int, 
         if ranbu >= 10:
             continue
 
-        # 保护刀只是接收经验不会被销毁，在队也能喂；
-        # 但内番中的不能作为习合目标
-        duty_sids = set(comp_data.get("duty", []))
-        if target_sid in duty_sids:
-            logger.debug(f"  保护刀 serial_id={target_sid} 在内番中，跳过习合")
-            continue
+        # 保护刀只是接收经验不会被销毁，在队/内番都能喂
+        # （内番刀可以习合，只有远征中的不行）
 
         needed = _swords_needed_for_target(target, 10)
         to_feed = materials[:needed]
