@@ -122,6 +122,14 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
                 protected_map[sid] = sword
 
+    if protected_map:
+        from .composition import get_sword_name
+        logger.debug(
+            f"保护刀映射（ranbu<10）: "
+            + ", ".join(f"{get_sword_name(sid)}(id={sid},lv={s.get('ranbu_level',0)})"
+                        for sid, s in protected_map.items())
+        )
+
     # 分类
     dismantleable: list[int] = []
     comp_materials: dict[int, list[dict]] = {}  # protected_serial_id → [material_data]
@@ -146,6 +154,22 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             comp_materials.setdefault(target_sid, []).append(sword)
         else:
             dismantleable.append(sword["serial_id"])
+
+    if protected_map and not comp_materials:
+        # 有保护刀但没匹配到素材 → 看看收到的非短刀是什么类型
+        received_ids = set()
+        for sword in swords.values():
+            if sword.get("protect", 0) == 0 and sword.get("role_id", 0) == 0:
+                sid = sword.get("sword_id")
+                if sid and sid not in tantou_sword_ids:
+                    received_ids.add(sid)
+        protected_ids = set(protected_map.keys())
+        overlap = protected_ids & received_ids
+        logger.debug(
+            f"保护刀 sword_id: {protected_ids}, "
+            f"库存非短刀 sword_id: {len(received_ids)} 种, "
+            f"重叠: {overlap if overlap else '无（所以没有素材可喂）'}"
+        )
 
     return dismantleable, comp_materials
 
