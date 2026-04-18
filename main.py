@@ -377,6 +377,15 @@ def main():
                     _run_mode(client, mode, state, params)
                 except KeyboardInterrupt:
                     logger.info("用户中断（Ctrl+C），当前模式结束")
+                    # Ctrl+C 可能打断了正在进行的 API 请求，
+                    # 服务端消耗了 token 但响应没收到 → token 链断裂。
+                    # 用 startup() 重建（只需 sword，不需要 t）。
+                    try:
+                        client.startup()
+                        state = client.get_game_state()
+                        logger.info("session 已恢复")
+                    except Exception:
+                        logger.warning("Ctrl+C 后 session 恢复失败，后续模式可能异常")
                 except RuntimeError as e:
                     err_str = str(e)
                     if "status=91" in err_str or "status=97" in err_str:
