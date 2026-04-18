@@ -195,7 +195,7 @@ def _restart_chrome_and_capture() -> tuple[str, str] | None:
         Path(CHROME_USER_DATA, "SingletonLock").unlink(missing_ok=True)
         Path(NET_LOG_PATH).unlink(missing_ok=True)
 
-        # 带 net-log 重启（不指定 URL，Chrome 自动恢复之前的标签页）
+        # 带 net-log 重启，直接打开游戏 URL（DMM 登录 cookie 是持久化的，不用重新 OAuth）
         proc = subprocess.Popen([
             CHROME_PATH,
             f"--profile-directory={CHROME_PROFILE_DIR}",
@@ -203,9 +203,9 @@ def _restart_chrome_and_capture() -> tuple[str, str] | None:
             "--net-log-capture-mode=Everything",
             "--no-first-run",
             "--no-default-browser-check",
-            "--restore-last-session",
+            GAME_URL,
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        logger.info("Chrome 温和重启，等待 session 恢复...")
+        logger.info("Chrome 温和重启，等待游戏加载...")
         time.sleep(5)
 
         # 等 token 稳定（游戏 session 恢复后会自动调 API）
