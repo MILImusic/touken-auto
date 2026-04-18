@@ -63,6 +63,13 @@ SORTIE_73_FIELD_ID:              int = 3   # 7-3
 SORTIE_73_CHECK_INTERVAL:        int = 15
 SORTIE_73_REST_SECONDS:          int = 5   # 固定休息时长
 
+# ── 7-4 循环配置（队伍3，固定休息）──────────────────────────
+SORTIE_74_PARTY_NO:              int = 3
+SORTIE_74_EPISODE_ID:            int = 7
+SORTIE_74_FIELD_ID:              int = 4   # 7-4
+SORTIE_74_CHECK_INTERVAL:        int = 15
+SORTIE_74_REST_SECONDS:          int = 5
+
 
 # ── 白山移除（4-4 出阵前调用）────────────────────────────────
 
@@ -379,4 +386,39 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"7-3 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
+
+
+def run_sortie_7_4_loop(client: ToukenClient) -> None:
+    """
+    队伍3 无限循环刷 7-4。
+    每 SORTIE_74_CHECK_INTERVAL 次固定休息 SORTIE_74_REST_SECONDS 秒。
+    按 Ctrl+C 手动停止。
+    """
+    total_runs = 0
+    start_time = datetime.datetime.now()
+    logger.info(
+        f"7-4 循环开始（队伍{SORTIE_74_PARTY_NO}），"
+        f"每 {SORTIE_74_CHECK_INTERVAL} 次休息 {SORTIE_74_REST_SECONDS}s"
+    )
+
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_74_PARTY_NO)
+            run_repair_check(client, SORTIE_74_PARTY_NO)
+
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 7-4（队伍{SORTIE_74_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_74_PARTY_NO, SORTIE_74_EPISODE_ID, SORTIE_74_FIELD_ID)
+
+            _check_and_recover_fatigue(client, SORTIE_74_PARTY_NO)
+            quick_expedition_check(client)
+
+            if total_runs % SORTIE_74_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_74_REST_SECONDS}s...")
+                time.sleep(SORTIE_74_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"7-4 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
         raise

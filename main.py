@@ -26,7 +26,7 @@ from api.sword_manager import run_sword_manager
 from api.fatigue_recovery import run_fatigue_recovery
 from api.practice import run_practice_cycle
 from api.dungeon import run_dungeon_climb, run_dungeon_floor_loop
-from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop, run_sortie_7_3_loop
+from api.sortie import run_sortie_4_3_loop, run_sortie_4_4_loop, run_sortie_7_3_loop, run_sortie_7_4_loop
 from api.parallel_past import run_parallel_past
 
 load_dotenv()
@@ -59,6 +59,7 @@ MODES = {
     8: "刀解模式（领取非短刀 + 自动刀解释放刀位）",
     9: "综合管理（习合+刀解一体化，刀位满自动腾位）",
     10: "气力恢复（指定队伍全员跑1-1补满气力）",
+    11: "循环7-4版（日常任务 + 7-4无限循环，队伍3，每15次固定休息）",
 }
 
 
@@ -95,6 +96,7 @@ def select_mode() -> int:
     print(f"  {_C['cyan']}4. {MODES[4]}{R}")
     print(f"  {_C['cyan']}5. {MODES[5]}{R}")
     print(f"  {_C['cyan']}6. {MODES[6]}{R}")
+    print(f"  {_C['cyan']}11. {MODES[11]}{R}")
     print(f"  {_C['dim']}── 其他 ──{R}")
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     print(f"  {_C['magenta']}8. {MODES[8]}{R}")
@@ -199,7 +201,7 @@ def _parse_mode_queue(raw: str) -> list[tuple[int, dict]] | None:
         else:
             mode_str, param_str = part, ""
 
-        if mode_str not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"):
+        if mode_str not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"):
             return None
 
         mode = int(mode_str)
@@ -299,6 +301,10 @@ def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None 
             params["party_no"] = int(input("请输入队伍编号（1-5）: ").strip())
         run_fatigue_recovery(client, params["party_no"])
 
+    elif mode == 11:
+        _ensure_daily()
+        run_sortie_7_4_loop(client)
+
 
 def _send_mode_summary(mode: int, error: Exception | None = None) -> None:
     """模式完成后发 Telegram 汇总"""
@@ -330,6 +336,7 @@ def _show_mode_menu() -> None:
     print(f"  {_C['cyan']}4. {MODES[4]}{R}")
     print(f"  {_C['cyan']}5. {MODES[5]}{R}")
     print(f"  {_C['cyan']}6. {MODES[6]}{R}")
+    print(f"  {_C['cyan']}11. {MODES[11]}{R}")
     print(f"  {_C['dim']}── 其他 ──{R}")
     print(f"  {_C['magenta']}7. {MODES[7]}{R}")
     print(f"  {_C['magenta']}8. {MODES[8]}{R}")
