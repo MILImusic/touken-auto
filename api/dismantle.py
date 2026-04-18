@@ -131,13 +131,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
                 if original_sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[original_sid].get("ranbu_level", 10):
                     protected_map[original_sid] = sword
 
-    if protected_map:
-        from .composition import get_sword_name
-        logger.debug(
-            f"保护刀映射（ranbu<10）: "
-            + ", ".join(f"{get_sword_name(sid)}(id={sid},lv={s.get('ranbu_level',0)})"
-                        for sid, s in protected_map.items())
-        )
+    # 保护刀数量简要提示（不再逐条打印）
+    unfed = {sid: s for sid, s in protected_map.items() if s.get("ranbu_level", 0) < 10}
+    if unfed:
+        logger.debug(f"保护刀映射：{len(protected_map)} 条（其中 {len(unfed)} 条 ranbu<10）")
 
     # 分类
     dismantleable: list[int] = []
@@ -164,21 +161,14 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
         else:
             dismantleable.append(sword["serial_id"])
 
-    if protected_map and not comp_materials:
-        # 有保护刀但没匹配到素材 → 看看收到的非短刀是什么类型
-        received_ids = set()
-        for sword in swords.values():
-            if sword.get("protect", 0) == 0 and sword.get("role_id", 0) == 0:
-                sid = sword.get("sword_id")
-                if sid and sid not in tantou_sword_ids:
-                    received_ids.add(sid)
-        protected_ids = set(protected_map.keys())
-        overlap = protected_ids & received_ids
-        logger.debug(
-            f"保护刀 sword_id: {protected_ids}, "
-            f"库存非短刀 sword_id: {len(received_ids)} 种, "
-            f"重叠: {overlap if overlap else '无（所以没有素材可喂）'}"
+    if comp_materials:
+        from .composition import get_sword_name
+        targets_info = ", ".join(
+            f"{get_sword_name(protected_map.get(next(iter([])), {}).get('sword_id', '?'))}×{len(mats)}"
+            if False else f"{len(mats)}把"
+            for t_sid, mats in comp_materials.items()
         )
+        logger.info(f"  找到 {sum(len(m) for m in comp_materials.values())} 把素材可喂 {len(comp_materials)} 把保护刀")
 
     return dismantleable, comp_materials
 
