@@ -422,6 +422,10 @@ def run_all_repairs(
             if real_fatigue != _hakusan_fatigue:
                 logger.info(f"  白山气力校准：追踪值={_hakusan_fatigue} → 实际值={real_fatigue}")
                 _hakusan_fatigue = real_fatigue
+            else:
+                logger.debug(f"  白山气力校准：追踪值={_hakusan_fatigue} = 实际值，无需调整")
+        else:
+            logger.debug("  getpartyinfo 无 fatigue 字段，跳过校准")
 
         # 治疗后检查白山气力（追踪值），低于 HAKUSAN_FATIGUE_HEAL_MIN 则立即补满再治下一把
         if _hakusan_fatigue < HAKUSAN_FATIGUE_HEAL_MIN:
