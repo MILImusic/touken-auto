@@ -381,12 +381,16 @@ def _composition_loop(client: ToukenClient, known_tantou_sword_ids: set[int]) ->
         # 优先级1：喂 protect 的刀到乱舞10
         for sword_id, targets in protected_targets.items():
             for target in targets:
-                # 从最新数据获取素材（排除编队/内番中的刀）
+                # 極化刀可以接受未極化素材（sword_id - 1）
+                compat_ids = {sword_id}
+                if target.get("kaika_level", 0) >= 1:
+                    compat_ids.add(sword_id - 1)
+                # 从最新数据获取素材
                 comp_data = _get_composition_data(client)
                 duty_sids = set(comp_data.get("duty", []))
                 materials = [
                     s for s in comp_data.get("sword", {}).values()
-                    if s.get("sword_id") == sword_id
+                    if s.get("sword_id") in compat_ids
                     and s.get("protect", 1) == 0
                     and s.get("role_id", 0) == 0
                     and s.get("serial_id") not in duty_sids

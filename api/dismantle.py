@@ -111,7 +111,7 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
                 duty_sids.add(val)
 
     # 构建保护刀映射：sword_id → {serial_id, ranbu_level, rarity, ranbu_exp, ...}
-    # 内番中的刀也可以习合，只有远征中的不行（远征刀由 role_id 和 expedition 状态判断）
+    # 極化刀同时映射原始 sword_id（-1），让未極化素材也能匹配
     protected_map: dict[int, dict] = {}  # sword_id → 保护刀数据
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
@@ -119,6 +119,11 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             # 取 ranbu_level 最低的保护刀（最需要喂的）
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
                 protected_map[sid] = sword
+            # 極化刀：同时用原始 sword_id 映射，让未極化素材能匹配
+            if sword.get("kaika_level", 0) >= 1:
+                original_sid = sid - 1
+                if original_sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[original_sid].get("ranbu_level", 10):
+                    protected_map[original_sid] = sword
 
     if protected_map:
         from .composition import get_sword_name
