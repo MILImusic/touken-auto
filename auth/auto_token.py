@@ -269,12 +269,16 @@ def _get_token_from_chrome_cookies() -> tuple[str, str] | None:
 def auto_get_token() -> tuple[str, str]:
     """全自动获取 token"""
     # 优先：Chrome 已打开游戏 → 从 Cookie 秒取
-    if _check_game_in_chrome():
+    chrome_running = _check_game_in_chrome()
+    if chrome_running:
         logger.info("检测到 Chrome 已打开游戏，尝试从 Cookie 获取...")
         result = _get_token_from_chrome_cookies()
         if result:
             return result
-        logger.warning("Cookie 获取失败，回退到完整登录流程...")
+        logger.warning("Cookie 获取失败（可能还在登录中）")
+        choice = input("是否关闭 Chrome 重新自动登录？(y/n): ").strip().lower()
+        if choice != "y":
+            raise RuntimeError("已取消，请在 Chrome 中完成登录后重试")
 
     if not _confirm_profile():
         raise RuntimeError("Chrome Profile 确认失败")
