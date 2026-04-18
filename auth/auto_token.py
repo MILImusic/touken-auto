@@ -10,12 +10,8 @@
      4. 关闭 Chrome
 """
 
-import ctypes
-import hashlib
 import json
 import re
-import shutil
-import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -172,113 +168,90 @@ def _check_game_in_chrome() -> bool:
         return False
 
 
-def _decrypt_cookie(encrypted_value: bytes, key: bytes) -> str | None:
-    """用 macOS CommonCrypto 解密 Chrome cookie（无需额外 pip 包）"""
-    if not encrypted_value:
-        return None
-    if not encrypted_value.startswith(b"v10"):
-        return encrypted_value.decode("utf-8", errors="ignore")
 
-    encrypted_data = encrypted_value[3:]  # 跳过 v10 前缀
-    iv = b" " * 16
+
+def _restart_chrome_and_capture() -> tuple[str, str] | None:
+    """
+    温和重启 Chrome（保留 session）+ net-log，游戏自动恢复后抓 token。
+    比完整登录快：不需要 Google OAuth / opencv 点击。
+    """
     try:
-        cc = ctypes.cdll.LoadLibrary("/usr/lib/system/libcommonCrypto.dylib")
-        buf = ctypes.create_string_buffer(len(encrypted_data) + 16)
-        out_len = ctypes.c_size_t(0)
-        # CCCrypt(op, alg, options, key, keyLen, iv, dataIn, dataInLen, dataOut, dataOutAvail, dataOutMoved)
-        rc = cc.CCCrypt(
-            1, 0, 1,                          # kCCDecrypt, AES128, PKCS7Padding
-            key, len(key), iv,
-            encrypted_data, len(encrypted_data),
-            buf, len(buf), ctypes.byref(out_len),
+        # 温和退出 Chrome（保留 session 数据，下次启动自动恢复标签页）
+        subprocess.run(
+            ["osascript", "-e", 'tell application "Google Chrome" to quit'],
+            capture_output=True, timeout=5,
         )
-        if rc == 0:
-            return buf.raw[: out_len.value].decode("utf-8")
+        # 等 Chrome 完全退出
+        for _ in range(10):
+            time.sleep(1)
+            r = subprocess.run(["pgrep", "-x", "Google Chrome"], capture_output=True)
+            if r.returncode != 0:
+                break
+        else:
+            # 10 秒还没退出，强制杀
+            subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
+            time.sleep(1)
+
+        Path(CHROME_USER_DATA, "SingletonLock").unlink(missing_ok=True)
+        Path(NET_LOG_PATH).unlink(missing_ok=True)
+
+        # 带 net-log 重启（不指定 URL，Chrome 自动恢复之前的标签页）
+        proc = subprocess.Popen([
+            CHROME_PATH,
+            f"--profile-directory={CHROME_PROFILE_DIR}",
+            f"--log-net-log={NET_LOG_PATH}",
+            "--net-log-capture-mode=Everything",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--restore-last-session",
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("Chrome 温和重启，等待 session 恢复...")
+        time.sleep(5)
+
+        # 等 token 稳定（游戏 session 恢复后会自动调 API）
+        last_result: tuple[str, str] | None = None
+        stable_count = 0
+        for _ in range(30):
+            time.sleep(1)
+            result = _extract_token_from_netlog()
+            if not result or not result[1]:
+                continue
+            if last_result and result[0] == last_result[0] and result[1] == last_result[1]:
+                stable_count += 1
+                if stable_count >= 2:
+                    sword, token = result
+                    logger.info(f"Token 已稳定！sword={sword[:20]}...")
+                    return sword, token
+            else:
+                last_result = result
+                stable_count = 0
+
+        if last_result and last_result[1]:
+            sword, token = last_result
+            logger.info(f"使用最新 token：sword={sword[:20]}...")
+            return sword, token
+
     except Exception as e:
-        logger.debug(f"CommonCrypto 解密失败: {e}")
-    return None
-
-
-def _get_token_from_chrome_cookies() -> tuple[str, str] | None:
-    """从 Chrome Cookie 数据库直接读取 sword + fuel_csrf_token"""
-    # 1. Keychain 取 Chrome Safe Storage 密钥
-    try:
-        logger.info("请求 Keychain 授权（如弹窗请输入密码）...")
-        r = subprocess.run(
-            ["security", "find-generic-password", "-w",
-             "-s", "Chrome Safe Storage", "-a", "Chrome"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if r.returncode != 0:
-            return None
-        chrome_pw = r.stdout.strip().encode("utf-8")
-    except Exception:
-        return None
-
-    # 2. PBKDF2 派生 AES 密钥
-    derived_key = hashlib.pbkdf2_hmac("sha1", chrome_pw, b"saltysalt", 1003, dklen=16)
-
-    # 3. 复制 Cookies 文件（Chrome 运行时锁数据库）
-    for sub in ("Network/Cookies", "Cookies"):
-        db_path = Path(CHROME_USER_DATA) / CHROME_PROFILE_DIR / sub
-        if db_path.exists():
-            break
-    else:
-        return None
-
-    tmp = Path("/tmp/touken-chrome-cookies-tmp")
-    try:
-        shutil.copy2(db_path, tmp)
-        for ext in ("-wal", "-journal"):
-            src = Path(str(db_path) + ext)
-            if src.exists():
-                shutil.copy2(src, Path(str(tmp) + ext))
-    except Exception:
-        return None
-
-    # 4. 读取并解密
-    try:
-        conn = sqlite3.connect(str(tmp))
-        rows = conn.execute(
-            "SELECT name, encrypted_value FROM cookies "
-            "WHERE host_key LIKE '%touken-ranbu%' "
-            "AND name IN ('sword', 'fuel_csrf_token')"
-        ).fetchall()
-        conn.close()
-    except Exception:
-        return None
+        logger.warning(f"温和重启失败：{e}")
     finally:
-        tmp.unlink(missing_ok=True)
-        for ext in ("-wal", "-journal"):
-            Path(str(tmp) + ext).unlink(missing_ok=True)
+        # 关闭 Chrome
+        subprocess.run(["pkill", "-9", "-f", "Google Chrome"], capture_output=True)
+        subprocess.run(["pkill", "-9", "-f", "GoogleUpdater"], capture_output=True)
+        Path(NET_LOG_PATH).unlink(missing_ok=True)
 
-    cookies = {}
-    for name, enc_val in rows:
-        val = _decrypt_cookie(enc_val, derived_key)
-        if val:
-            cookies[name] = val
-
-    sword = cookies.get("sword")
-    csrf = cookies.get("fuel_csrf_token")
-    if sword and csrf:
-        logger.info(f"从 Chrome Cookie 直接获取 token！sword={sword[:20]}...")
-        return sword, csrf
     return None
 
 
 def auto_get_token() -> tuple[str, str]:
     """全自动获取 token"""
-    # 优先：Chrome 已打开游戏 → 从 Cookie 秒取
+    # 优先：Chrome 已打开游戏 → 温和重启，session 恢复后抓 token
     chrome_running = _check_game_in_chrome()
     if chrome_running:
-        logger.info("检测到 Chrome 已打开游戏，尝试从 Cookie 获取...")
-        result = _get_token_from_chrome_cookies()
+        logger.info("检测到 Chrome 已打开游戏，温和重启抓 token（不用重新登录）...")
+        result = _restart_chrome_and_capture()
         if result:
             return result
-        logger.warning("Cookie 获取失败（可能还在登录中）")
-        choice = input("是否关闭 Chrome 重新自动登录？(y/n): ").strip().lower()
-        if choice != "y":
-            raise RuntimeError("已取消，请在 Chrome 中完成登录后重试")
+        logger.warning("温和重启获取失败，回退到完整登录流程...")
 
     if not _confirm_profile():
         raise RuntimeError("Chrome Profile 确认失败")
