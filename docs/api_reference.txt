@@ -401,11 +401,25 @@ Q3: eventsally status=2 的真实原因？
     启动参数：--profile-directory="Profile 1" --log-net-log=/tmp/touken-chrome-net.json
     模板图片：auth/templates/（google_login.png, green_arrow.png, honmaru.png）
 
-■ 白山吉光编成变更（2026-04-04）
+■ 白山吉光编成变更（2026-04-04，2026-04-18 修正）
   部隊1 为专属治疗队，白山吉光常驻槽1，平时只放白山（槽2-6 空置）。
   原为 部隊2，已更新 HAKUSAN_PARTY_NO = 1。
   部隊1 与各作战队（部隊3=4-4/4-3/7-3/地下城）互不干扰，
   无需在 4-4 循环前移除白山（remove_hakusan_for_sortie 调用已删除）。
+
+  sword_id 修正（2026-04-18）：
+    原 HAKUSAN_SWORD_ID=11 是今剣的 ID，不是白山。
+    改为 HAKUSAN_SWORD_IDS={164, 165}（164=未極化, 165=極化），支持两种版本。
+
+■ 極化（kaika）sword_id 映射（2026-04-18 确认）
+  極化后 sword_id = 原始 sword_id + 1，kaika_level 从 0 变 1。
+  例：白山吉光 164→165，鬼丸国綱 21→22，髭切 107→108。
+  习合系统需要同时映射两个 ID，否则未極化素材匹配不到極化保护刀。
+  _classify_swords 和 _composition_loop 均已处理。
+
+■ 内番（duty）与习合（2026-04-18 确认）
+  内番中的刀可以作为习合目标（接收经验），只有远征中的不行。
+  之前错误地跳过了 duty_sids 中的保护刀，导致在内番的保护刀永远不被喂。
 
 ■ 远征配置变更（2026-04-04）
   部隊1 移为专属治疗队后，已从 EXPEDITION_TARGETS 中删除。
