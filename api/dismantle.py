@@ -113,6 +113,12 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     # 构建保护刀映射：sword_id → {serial_id, ranbu_level, rarity, ranbu_exp, ...}
     # 極化刀同时映射原始 sword_id（-1），让未極化素材也能匹配
     protected_map: dict[int, dict] = {}  # sword_id → 保护刀数据
+    # 先检查 forge 数据是否有 kaika_level 字段
+    _sample = next(iter(swords.values()), {}) if swords else {}
+    has_kaika = "kaika_level" in _sample
+    if not has_kaika and swords:
+        logger.warning("forge 数据无 kaika_level 字段，極化刀映射可能失效")
+
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
             sid = sword.get("sword_id")
