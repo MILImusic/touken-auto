@@ -54,6 +54,7 @@ def _check_forge_if_enabled(client: ToukenClient) -> None:
         return
     try:
         from .forge_event import run_forge_check
+        logger.debug("锻造检查...")
         found_new = run_forge_check(client)
         if found_new:
             _forge_event_enabled = False

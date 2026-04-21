@@ -195,6 +195,7 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
 
     completed_slots = check_forge_slots(state)
     if not completed_slots:
+        logger.debug("锻造检查：无完成的槽")
         return False
 
     logger.info(f"锻造检查：槽 {completed_slots} 已完成")
