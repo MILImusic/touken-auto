@@ -149,6 +149,7 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     # 构建保护刀映射：sword_id → {serial_id, ranbu_level, rarity, ranbu_exp, ...}
     # 極化刀同时映射原始 sword_id（-1），让未極化素材也能匹配
     protected_map: dict[int, dict] = {}  # sword_id → 保护刀数据
+    expedition_needs_feed: set[int] = set()  # 远征中且 ranbu<10 的 sword_id 家族
 
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
@@ -158,6 +159,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             on_expedition = serial_id in expedition_sids
             if on_expedition:
                 # 仍然加入 has_protected（不误判新刀），但不加入 protected_map（不尝试习合）
+                # ranbu<10 的远征刀记录到 expedition_needs_feed，用于保留素材
+                if sword.get("ranbu_level", 0) < 10:
+                    for fid in get_sword_family(sid, sword.get("kaika_level", 0)):
+                        expedition_needs_feed.add(fid)
                 continue
             # 取 ranbu_level 最低的保护刀（最需要喂的）
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
@@ -211,10 +216,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             kept_new.add(sword_id)
             from .composition import get_sword_name
             logger.info(f"  新刀保留：{get_sword_name(sword_id)}(id={sword_id}) — 仓库无保护版本，跳过刀解")
-        # 保护刀在远征中（不在 protected_map 但在 has_protected）→ 保留素材等远征回来
-        elif sword_id not in protected_map and sword_id in has_protected:
+        # 保护刀在远征中且 ranbu<10 → 保留素材等远征回来喂
+        elif sword_id in expedition_needs_feed:
             from .composition import get_sword_name
-            logger.debug(f"  远征保留：{get_sword_name(sword_id)}(id={sword_id}) — 保护刀在远征中，素材暂存")
+            logger.debug(f"  远征保留：{get_sword_name(sword_id)}(id={sword_id}) — 保护刀在远征中(ranbu<10)，素材暂存")
         else:
             dismantleable.append(sword["serial_id"])
 
