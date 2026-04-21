@@ -45,6 +45,9 @@ def _get_resources(client: ToukenClient) -> dict:
 
 def _log_resource_diff(start_res: dict, end_res: dict) -> None:
     """打印资源变化汇总"""
+    if not end_res or "charcoal" not in end_res:
+        logger.debug("  资源汇总跳过（token 断裂，无法获取最终资源）")
+        return
     items = [
         ("charcoal", "木炭"), ("steel", "玉钢"),
         ("coolant", "冷却材"), ("file", "砥石"),
