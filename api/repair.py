@@ -32,7 +32,7 @@ HAKUSAN_SWORD_IDS:   set[int] = {164, 165}  # 白山吉光（164=未極化, 165=
 HAKUSAN_PARTY_NO:    int = 1     # 白山吉光专属治疗队（槽1为固定队长，平时只放白山）
 HAKUSAN_MOBILE:      int = 54
 HAKUSAN_FATIGUE_MIN:      int = 25  # 治疗前最低气力（低于此值先补满再治疗）
-HAKUSAN_FATIGUE_HEAL_MIN: int = 40  # 每次治疗后白山气力下限（低于此值立即补满）
+HAKUSAN_FATIGUE_HEAL_MIN: int = 50  # 每次治疗后白山气力下限（低于此值立即补满）
 HAKUSAN_FATIGUE_MAX: int = 100
 MAX_HEAL_ROUNDS:     int = 10
 
