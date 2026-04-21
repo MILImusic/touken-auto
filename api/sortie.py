@@ -70,7 +70,7 @@ def _get_resources(client: ToukenClient) -> dict:
 
 
 def _log_resource_diff(start_res: dict, end_res: dict) -> None:
-    """打印资源变化汇总"""
+    """打印资源变化汇总（end_res 无效时自动跳过）"""
     if not end_res or "charcoal" not in end_res:
         logger.debug("  资源汇总跳过（token 断裂，无法获取最终资源）")
         return
@@ -80,9 +80,10 @@ def _log_resource_diff(start_res: dict, end_res: dict) -> None:
     ]
     parts = []
     for key, name in items:
-        diff = end_res.get(key, 0) - start_res.get(key, 0)
+        current = end_res.get(key, 0)
+        diff = current - start_res.get(key, 0)
         sign = "+" if diff >= 0 else ""
-        parts.append(f"{name}:{sign}{diff}")
+        parts.append(f"{name}:{sign}{diff}({current})")
     logger.info(f"  资源变化：{'  '.join(parts)}")
 
 # ── 共用配置 ──────────────────────────────────────────────────
@@ -376,6 +377,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
                 )
                 time.sleep(rest)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
                 last_check_bill = current_bill
     except KeyboardInterrupt:
@@ -417,6 +419,7 @@ def run_sortie_4_2_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_42_REST_SECONDS}s...")
                 time.sleep(SORTIE_42_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -460,6 +463,7 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
                 time.sleep(SORTIE_43_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -501,6 +505,7 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
                 time.sleep(SORTIE_73_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -538,6 +543,7 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_74_REST_SECONDS}s...")
                 time.sleep(SORTIE_74_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -573,6 +579,7 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_52_REST_SECONDS}s...")
                 time.sleep(SORTIE_52_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -608,6 +615,7 @@ def run_sortie_6_1_loop(client: ToukenClient) -> None:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_61_REST_SECONDS}s...")
                 time.sleep(SORTIE_61_REST_SECONDS)
                 _check_forge_if_enabled(client)
+                _log_resource_diff(start_res, _get_resources(client))
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
