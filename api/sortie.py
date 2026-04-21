@@ -70,11 +70,21 @@ def _get_resources(client: ToukenClient) -> dict:
     return state.get("resource", {})
 
 
+_last_good_res: dict = {}  # 最近一次成功获取的资源快照
+
+
 def _log_resource_diff(start_res: dict, end_res: dict) -> None:
-    """打印资源变化汇总（end_res 无效时自动跳过）"""
+    """打印资源变化汇总（end_res 无效时用上次快照）"""
+    global _last_good_res
     if not end_res or "charcoal" not in end_res:
-        logger.debug("  资源汇总跳过（token 断裂，无法获取最终资源）")
-        return
+        if _last_good_res and "charcoal" in _last_good_res:
+            logger.info("  （token 断裂，使用上次快照）")
+            end_res = _last_good_res
+        else:
+            logger.debug("  资源汇总跳过（无可用数据）")
+            return
+    else:
+        _last_good_res = end_res
     items = [
         ("charcoal", "木炭"), ("steel", "玉钢"),
         ("coolant", "冷却材"), ("file", "砥石"),
