@@ -421,6 +421,26 @@ Q3: eventsally status=2 的真实原因？
   内番中的刀可以作为习合目标（接收经验），只有远征中的不行。
   之前错误地跳过了 duty_sids 中的保护刀，导致在内番的保护刀永远不被喂。
 
+■ 远征中保护刀的素材处理（2026-04-21 确认）
+  远征中的刀不能习合（composition/union 返回 status=2）。
+  _classify_swords 从 forge 的 party（status=2）提取远征 serial_id，
+  远征中的保护刀不加入 protected_map（不尝试习合），
+  但仍加入 has_protected（避免误判新刀）。
+  对应素材保留在仓库不刀解，等远征回来再喂。
+
+■ 新刀保护（2026-04-21）
+  受取箱收到仓库里没有保护版本的新刀时，保留一把不刀解。
+  判断逻辑：sword_id 不在 has_protected 集合中 → 保留第一把。
+  has_protected 含家族所有形态（極化、特、原始），避免误判。
+
+■ 多形态刀剣家族（2026-04-21）
+  get_sword_family(sword_id, kaika_level) 返回同一刀剣的所有形态 ID。
+  三层判断：
+    1. SWORD_FAMILIES 硬编码（髭切 107-111、膝丸 112-115）
+    2. kaika_level >= 1 → {id-1, id}（標準極化）
+    3. 名字以「・極」结尾 → {id-1, id}（kaika_level=0 但确实是極化，如太郎太刀・極）
+    4. 默认 → {id, id+1}（原始刀往前找極化）
+
 ■ 远征配置变更（2026-04-04）
   部隊1 移为专属治疗队后，已从 EXPEDITION_TARGETS 中删除。
   当前远征目标：队2=3-2、队3=4-2、队4=5-1、队5=5-2。
