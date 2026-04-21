@@ -136,9 +136,16 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     if unfed:
         logger.debug(f"保护刀映射：{len(protected_map)} 条（其中 {len(unfed)} 条 ranbu<10）")
 
+    # 构建「有保护版本」的 sword_id 集合（含極化映射的原始ID）
+    has_protected: set[int] = set()
+    for sword in swords.values():
+        if sword.get("protect", 0) >= 1:
+            has_protected.add(sword.get("sword_id"))
+
     # 分类
     dismantleable: list[int] = []
     comp_materials: dict[int, list[dict]] = {}  # protected_serial_id → [material_data]
+    kept_new: set[int] = set()  # 已保留一把的新刀 sword_id
 
     for sword in swords.values():
         if sword.get("protect", 0) != 0:
@@ -158,6 +165,11 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
         if sword_id in protected_map and protected_map[sword_id].get("ranbu_level", 0) < 10:
             target_sid = protected_map[sword_id]["serial_id"]
             comp_materials.setdefault(target_sid, []).append(sword)
+        # 没有保护版本 → 新刀，保留一把不刀解
+        elif sword_id not in has_protected and sword_id not in kept_new:
+            kept_new.add(sword_id)
+            from .composition import get_sword_name
+            logger.info(f"  新刀保留：{get_sword_name(sword_id)}(id={sword_id}) — 仓库无保护版本，跳过刀解")
         else:
             dismantleable.append(sword["serial_id"])
 
