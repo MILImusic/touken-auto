@@ -93,10 +93,46 @@ def run_sword_manager(client: ToukenClient) -> None:
 
             if received_count > 0:
                 did_anything = True
-                # 习合短刀（一次 composition/index 检查所有 sword_id）
-                from .composition import TARGET_RANBU_LEVEL, _feed_target
+                from .composition import TARGET_RANBU_LEVEL, _feed_target, mark_protected_composed
+                from .dismantle import get_sword_family
                 need_refresh = True
+
                 for sword_id in tantou_sword_ids:
+                    # 优先级1：保护短刀喂到乱舞10
+                    if need_refresh:
+                        comp_data = _get_composition_data(client)
+                        need_refresh = False
+                    duty_sids = set(comp_data.get("duty", []))
+                    protected_targets = [
+                        s for s in comp_data.get("sword", {}).values()
+                        if s.get("sword_id") == sword_id
+                        and s.get("protect", 0) >= 1
+                        and s.get("ranbu_level", 0) < 10
+                    ]
+                    for pt in protected_targets:
+                        if need_refresh:
+                            comp_data = _get_composition_data(client)
+                            need_refresh = False
+                            duty_sids = set(comp_data.get("duty", []))
+                        # 極化保护刀也接受未極化素材
+                        compat_ids = {sword_id}
+                        if pt.get("kaika_level", 0) >= 1:
+                            compat_ids.add(sword_id - 1)
+                        materials = [
+                            s for s in comp_data.get("sword", {}).values()
+                            if s.get("sword_id") in compat_ids
+                            and s.get("protect", 0) == 0
+                            and s.get("role_id", 0) == 0
+                            and s.get("serial_id") not in duty_sids
+                        ]
+                        if not materials:
+                            break
+                        mark_protected_composed(pt["serial_id"])
+                        if _feed_target(client, pt, materials, 10):
+                            total_composed += 1
+                            need_refresh = True
+
+                    # 优先级2：未保护短刀互喂到乱舞7
                     while True:
                         if need_refresh:
                             comp_data = _get_composition_data(client)
@@ -119,7 +155,7 @@ def run_sword_manager(client: ToukenClient) -> None:
                             break
                         if _feed_target(client, target, materials, TARGET_RANBU_LEVEL):
                             total_composed += 1
-                            need_refresh = True  # 喂完才刷新
+                            need_refresh = True
                         else:
                             break
 
