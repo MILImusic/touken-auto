@@ -47,8 +47,14 @@ def get_sword_family(sword_id: int, kaika_level: int = 0) -> set[int]:
     """获取同一刀剣的所有形态 ID（含極化+1）"""
     if sword_id in _FAMILY_MAP:
         return _FAMILY_MAP[sword_id]
-    # 标准極化：原始 ↔ 極化（+1）
-    if kaika_level >= 1:
+    # 標準極化：kaika_level>=1 或名字以「・極」结尾（有些極化刀 kaika_level=0）
+    is_kiwame = kaika_level >= 1
+    if not is_kiwame:
+        from .composition import get_sword_name
+        name = get_sword_name(sword_id)
+        if name.endswith("・極"):
+            is_kiwame = True
+    if is_kiwame:
         return {sword_id - 1, sword_id}  # 極化刀 → 往回找原始
     return {sword_id, sword_id + 1}      # 原始刀 → 往前找極化
 
