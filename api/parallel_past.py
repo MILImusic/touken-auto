@@ -21,6 +21,8 @@
   PARALLEL_PAST_DAILY_MAX   = 3
 """
 
+import time
+
 from loguru import logger
 
 from .client import ToukenClient
