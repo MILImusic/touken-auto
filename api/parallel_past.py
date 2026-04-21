@@ -27,6 +27,7 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import battle_sleep, FORMATION_ID
+from .repair import run_repair_check, is_heavily_injured
 
 PARALLEL_PAST_PARTY_NO:   int = 3
 PARALLEL_PAST_EPISODE_ID: int = 1
@@ -114,6 +115,16 @@ def _run_single_parallel_past(client: ToukenClient) -> bool:
             logger.debug(f"    节点 {node_no}：战斗 {battle_no}（formation={formation_id}）is_finish={is_finish}")
             client._post("battle/battle", extra={"formation_id": formation_id})
             battle_sleep()
+
+            # 道中重伤检查：非最终节点战斗后，有重伤则立刻停止（防止碎刀）
+            if not is_finish:
+                pi = client._post("party/getpartyinfo", extra={"party_no": PARALLEL_PAST_PARTY_NO})
+                injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
+                if injured:
+                    logger.warning(
+                        f"    节点 {node_no} 后检测到道中重伤（serial_id={injured}），停止出阵"
+                    )
+                    break
         else:
             logger.debug(f"    节点 {node_no}：非战斗节点，跳过")
 
@@ -164,6 +175,9 @@ def run_parallel_past_loop(client: ToukenClient) -> None:
 
     try:
         while True:
+            # 出阵前重伤检查
+            run_repair_check(client, PARALLEL_PAST_PARTY_NO)
+
             total_runs += 1
             logger.info(f"[异去循环 第{total_runs}次]")
 
