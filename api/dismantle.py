@@ -173,11 +173,15 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     if unfed:
         logger.debug(f"保护刀映射：{len(protected_map)} 条（其中 {len(unfed)} 条 ranbu<10）")
 
-    # 构建「有保护版本」的 sword_id 集合（含家族所有形态）
+    # 构建「有保护版本」的 sword_id 集合（含家族所有形态 + id±1 兜底）
     has_protected: set[int] = set()
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
-            has_protected.update(get_sword_family(sword.get("sword_id"), sword.get("kaika_level", 0)))
+            sid = sword.get("sword_id")
+            has_protected.update(get_sword_family(sid, sword.get("kaika_level", 0)))
+            # 兜底：id±1 也标记（防止名字/kaika 判断失败导致误判新刀）
+            has_protected.add(sid - 1)
+            has_protected.add(sid + 1)
 
     # 分类
     dismantleable: list[int] = []
