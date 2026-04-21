@@ -29,6 +29,7 @@ from api.dungeon import run_dungeon_climb, run_dungeon_floor_loop
 from api.sortie import (
     run_sortie_4_2_loop, run_sortie_4_3_loop, run_sortie_4_4_loop,
     run_sortie_5_2_loop, run_sortie_6_1_loop, run_sortie_7_3_loop, run_sortie_7_4_loop,
+    enable_forge_event,
 )
 from api.parallel_past import run_parallel_past, run_parallel_past_loop
 
@@ -115,6 +116,7 @@ def select_mode() -> int:
     print(f"  {_C['magenta']}10. {MODES[10]}{R}")
     print(f"  {_C['dim']}支持接力：如 9 3:88 表示先跑模式9再跑模式3(88层){R}")
     print(f"  {_C['dim']}         10:3 表示恢复队伍3气力{R}")
+    print(f"  {_C['dim']}         +f 启用限时锻造（休息时自动领取+再开）{R}")
     while True:
         raw = input("输入模式: ").strip()
         if not raw:
@@ -204,9 +206,15 @@ def _parse_mode_queue(raw: str) -> list[tuple[int, dict]] | None:
            '3:88'  → [(3, {'layer_id': 88})]
            '7'     → [(7, {})]
            '1:50'  → [(1, {'start_layer': 50})]
+           '+f'    → 启用限时锻造检查（可与模式组合：'14 +f'）
     """
     queue = []
     for part in raw.split():
+        # +f 启用限时锻造
+        if part.lower() == "+f":
+            enable_forge_event()
+            continue
+
         if ":" in part:
             mode_str, param_str = part.split(":", 1)
         else:

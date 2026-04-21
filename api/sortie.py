@@ -36,6 +36,31 @@ COUNTER_FORMATION: dict[int, int] = {
 from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, is_heavily_injured
 from .expedition import quick_expedition_check
 
+# 限时锻造检查（可选，启用时在休息间隙自动处理锻造槽）
+_forge_event_enabled: bool = False
+
+
+def enable_forge_event():
+    """启用限时锻造自动检查"""
+    global _forge_event_enabled
+    _forge_event_enabled = True
+    logger.info("限时锻造检查已启用（休息间隙自动领取+再开）")
+
+
+def _check_forge_if_enabled(client: ToukenClient) -> None:
+    """休息间隙调用：如果启用了锻造检查，执行一轮"""
+    if not _forge_event_enabled:
+        return
+    try:
+        from .forge_event import run_forge_check
+        found_new = run_forge_check(client)
+        if found_new:
+            global _forge_event_enabled
+            _forge_event_enabled = False
+            logger.info("发现新刀，已自动关闭锻造检查")
+    except Exception as e:
+        logger.warning(f"锻造检查异常：{e}")
+
 
 def _get_resources(client: ToukenClient) -> dict:
     """从 home/index 获取当前资源"""
@@ -349,6 +374,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
                     f"（+{gained}），休息 {rest}s..."
                 )
                 time.sleep(rest)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
                 last_check_bill = current_bill
     except KeyboardInterrupt:
@@ -389,6 +415,7 @@ def run_sortie_4_2_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_42_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_42_REST_SECONDS}s...")
                 time.sleep(SORTIE_42_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -431,6 +458,7 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
                 time.sleep(SORTIE_43_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -471,6 +499,7 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_73_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
                 time.sleep(SORTIE_73_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -507,6 +536,7 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_74_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_74_REST_SECONDS}s...")
                 time.sleep(SORTIE_74_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -541,6 +571,7 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_52_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_52_REST_SECONDS}s...")
                 time.sleep(SORTIE_52_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -575,6 +606,7 @@ def run_sortie_6_1_loop(client: ToukenClient) -> None:
             if total_runs % SORTIE_61_CHECK_INTERVAL == 0:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_61_REST_SECONDS}s...")
                 time.sleep(SORTIE_61_REST_SECONDS)
+                _check_forge_if_enabled(client)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
