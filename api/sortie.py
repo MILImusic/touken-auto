@@ -20,6 +20,7 @@
   episode_id=4, field_id=3, party_no=4 — 4-3 地图参数
 """
 
+import random
 import time
 from loguru import logger
 
@@ -87,6 +88,8 @@ def _log_resource_diff(start_res: dict, end_res: dict) -> None:
     logger.info(f"  资源变化：{'  '.join(parts)}")
 
 # ── 共用配置 ──────────────────────────────────────────────────
+REST_INTERVAL_MIN:          int = 20  # 休息间隔最小次数
+REST_INTERVAL_MAX:          int = 50  # 休息间隔最大次数
 FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队长位
 FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
 
@@ -349,10 +352,11 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
     initial_bill = get_bill(client)
     last_check_bill = initial_bill
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"4-4 循环开始（队伍{SORTIE_44_PARTY_NO}），依赖札初始：{initial_bill}，"
-        f"每 {SORTIE_44_CHECK_INTERVAL} 次检查"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
 
     try:
@@ -367,7 +371,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
             _check_and_recover_fatigue(client, SORTIE_44_PARTY_NO)
             quick_expedition_check(client)
 
-            if total_runs % SORTIE_44_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 current_bill = get_bill(client)
                 gained = current_bill - last_check_bill
                 rest = YORAIFUDA_REST_SHORT_SECONDS if gained < YORAIFUDA_REST_LOW_THRESHOLD else YORAIFUDA_REST_LONG_SECONDS
@@ -378,6 +382,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
                 time.sleep(rest)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
                 last_check_bill = current_bill
     except KeyboardInterrupt:
@@ -401,10 +406,11 @@ def run_sortie_4_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 4-2（主砥石）。"""
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"4-2 循环开始（队伍{SORTIE_42_PARTY_NO}，主砥石），"
-        f"每 {SORTIE_42_CHECK_INTERVAL} 次休息 {SORTIE_42_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
     try:
         while True:
@@ -415,11 +421,12 @@ def run_sortie_4_2_loop(client: ToukenClient) -> None:
             _run_single_sortie(client, SORTIE_42_PARTY_NO, SORTIE_42_EPISODE_ID, SORTIE_42_FIELD_ID)
             _check_and_recover_fatigue(client, SORTIE_42_PARTY_NO)
             quick_expedition_check(client)
-            if total_runs % SORTIE_42_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_42_REST_SECONDS}s...")
                 time.sleep(SORTIE_42_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -441,10 +448,11 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
     """
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"4-3 循环开始（队伍{SORTIE_43_PARTY_NO}），"
-        f"每 {SORTIE_43_CHECK_INTERVAL} 次休息 {SORTIE_43_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
 
     try:
@@ -459,11 +467,12 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
             _check_and_recover_fatigue(client, SORTIE_43_PARTY_NO)
             quick_expedition_check(client)
 
-            if total_runs % SORTIE_43_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_43_REST_SECONDS}s...")
                 time.sleep(SORTIE_43_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -483,10 +492,11 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     """
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"7-3 循环开始（队伍{SORTIE_73_PARTY_NO}），"
-        f"每 {SORTIE_73_CHECK_INTERVAL} 次休息 {SORTIE_73_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
 
     try:
@@ -501,11 +511,12 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
             _check_and_recover_fatigue(client, SORTIE_73_PARTY_NO)
             quick_expedition_check(client)
 
-            if total_runs % SORTIE_73_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_73_REST_SECONDS}s...")
                 time.sleep(SORTIE_73_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -521,10 +532,11 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 7-4。"""
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"7-4 循环开始（队伍{SORTIE_74_PARTY_NO}），"
-        f"每 {SORTIE_74_CHECK_INTERVAL} 次休息 {SORTIE_74_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
 
     try:
@@ -539,11 +551,12 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
             _check_and_recover_fatigue(client, SORTIE_74_PARTY_NO)
             quick_expedition_check(client)
 
-            if total_runs % SORTIE_74_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_74_REST_SECONDS}s...")
                 time.sleep(SORTIE_74_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -561,10 +574,11 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 5-2（主木炭）。"""
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"5-2 循环开始（队伍{SORTIE_52_PARTY_NO}，主木炭），"
-        f"每 {SORTIE_52_CHECK_INTERVAL} 次休息 {SORTIE_52_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
     try:
         while True:
@@ -575,11 +589,12 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
             _run_single_sortie(client, SORTIE_52_PARTY_NO, SORTIE_52_EPISODE_ID, SORTIE_52_FIELD_ID)
             _check_and_recover_fatigue(client, SORTIE_52_PARTY_NO)
             quick_expedition_check(client)
-            if total_runs % SORTIE_52_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_52_REST_SECONDS}s...")
                 time.sleep(SORTIE_52_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
@@ -597,10 +612,11 @@ def run_sortie_6_1_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 6-1（主砥石，高速枪，马匹属性减半）。"""
     start_res = _get_resources(client)
     total_runs = 0
+    next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
     logger.info(
         f"6-1 循环开始（队伍{SORTIE_61_PARTY_NO}，主砥石，高速枪/马匹减半），"
-        f"每 {SORTIE_61_CHECK_INTERVAL} 次休息 {SORTIE_61_REST_SECONDS}s"
+        f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
     try:
         while True:
@@ -611,11 +627,12 @@ def run_sortie_6_1_loop(client: ToukenClient) -> None:
             _run_single_sortie(client, SORTIE_61_PARTY_NO, SORTIE_61_EPISODE_ID, SORTIE_61_FIELD_ID)
             _check_and_recover_fatigue(client, SORTIE_61_PARTY_NO)
             quick_expedition_check(client)
-            if total_runs % SORTIE_61_CHECK_INTERVAL == 0:
+            if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_61_REST_SECONDS}s...")
                 time.sleep(SORTIE_61_REST_SECONDS)
                 _check_forge_if_enabled(client)
                 _log_resource_diff(start_res, _get_resources(client))
+                next_rest = total_runs + random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
                 logger.info("  休息结束，继续新一轮...")
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
