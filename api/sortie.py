@@ -40,21 +40,35 @@ from .expedition import quick_expedition_check
 FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队长位
 FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
 
-# ── 4-4 循环配置（队伍2，检查依赖札）────────────────────────
-SORTIE_44_PARTY_NO:              int = 3
-SORTIE_44_EPISODE_ID:            int = 4
-SORTIE_44_FIELD_ID:              int = 4   # 4-4
-SORTIE_44_CHECK_INTERVAL:        int = 15
-YORAIFUDA_REST_LOW_THRESHOLD:    int = 10  # 新获得依赖札低于此值时的短休息判定
-YORAIFUDA_REST_SHORT_SECONDS:    int = 5   # 新获得 < 10 时休息时长
-YORAIFUDA_REST_LONG_SECONDS:     int = 10  # 新获得 >= 10 时休息时长
+# ── 4-2 循环配置（主砥石）─────────────────────────────────────
+SORTIE_42_PARTY_NO:              int = 3
+SORTIE_42_EPISODE_ID:            int = 4
+SORTIE_42_FIELD_ID:              int = 2   # 4-2
+SORTIE_42_CHECK_INTERVAL:        int = 15
+SORTIE_42_REST_SECONDS:          int = 5
 
-# ── 4-3 循环配置（队伍4，固定休息，不检查依赖札）────────────
+# ── 4-3 循环配置（主冷却材）──────────────────────────────────
 SORTIE_43_PARTY_NO:              int = 3
 SORTIE_43_EPISODE_ID:            int = 4
 SORTIE_43_FIELD_ID:              int = 3   # 4-3
 SORTIE_43_CHECK_INTERVAL:        int = 15
-SORTIE_43_REST_SECONDS:          int = 5   # 固定休息时长
+SORTIE_43_REST_SECONDS:          int = 5
+
+# ── 4-4 循环配置（主委托符）──────────────────────────────────
+SORTIE_44_PARTY_NO:              int = 3
+SORTIE_44_EPISODE_ID:            int = 4
+SORTIE_44_FIELD_ID:              int = 4   # 4-4
+SORTIE_44_CHECK_INTERVAL:        int = 15
+YORAIFUDA_REST_LOW_THRESHOLD:    int = 10
+YORAIFUDA_REST_SHORT_SECONDS:    int = 5
+YORAIFUDA_REST_LONG_SECONDS:     int = 10
+
+# ── 5-2 循环配置（主木炭）────────────────────────────────────
+SORTIE_52_PARTY_NO:              int = 3
+SORTIE_52_EPISODE_ID:            int = 5
+SORTIE_52_FIELD_ID:              int = 2   # 5-2
+SORTIE_52_CHECK_INTERVAL:        int = 15
+SORTIE_52_REST_SECONDS:          int = 5
 
 # ── 7-3 循环配置（队伍3，固定休息，不检查依赖札）────────────
 SORTIE_73_PARTY_NO:              int = 3
@@ -317,7 +331,36 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
         raise
 
 
-# ── 4-3 循环（队伍4，固定休息）──────────────────────────────
+# ── 4-2 循环（主砥石）────────────────────────────────────────
+
+def run_sortie_4_2_loop(client: ToukenClient) -> None:
+    """队伍3 无限循环刷 4-2（主砥石）。"""
+    total_runs = 0
+    start_time = datetime.datetime.now()
+    logger.info(
+        f"4-2 循环开始（队伍{SORTIE_42_PARTY_NO}，主砥石），"
+        f"每 {SORTIE_42_CHECK_INTERVAL} 次休息 {SORTIE_42_REST_SECONDS}s"
+    )
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_42_PARTY_NO)
+            run_repair_check(client, SORTIE_42_PARTY_NO)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 4-2（队伍{SORTIE_42_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_42_PARTY_NO, SORTIE_42_EPISODE_ID, SORTIE_42_FIELD_ID)
+            _check_and_recover_fatigue(client, SORTIE_42_PARTY_NO)
+            quick_expedition_check(client)
+            if total_runs % SORTIE_42_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_42_REST_SECONDS}s...")
+                time.sleep(SORTIE_42_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"4-2 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
+
+
+# ── 4-3 循环（主冷却材）──────────────────────────────────────
 
 def run_sortie_4_3_loop(client: ToukenClient) -> None:
     """
@@ -421,4 +464,33 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"7-4 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
+
+
+# ── 5-2 循环（主木炭）────────────────────────────────────────
+
+def run_sortie_5_2_loop(client: ToukenClient) -> None:
+    """队伍3 无限循环刷 5-2（主木炭）。"""
+    total_runs = 0
+    start_time = datetime.datetime.now()
+    logger.info(
+        f"5-2 循环开始（队伍{SORTIE_52_PARTY_NO}，主木炭），"
+        f"每 {SORTIE_52_CHECK_INTERVAL} 次休息 {SORTIE_52_REST_SECONDS}s"
+    )
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_52_PARTY_NO)
+            run_repair_check(client, SORTIE_52_PARTY_NO)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 5-2（队伍{SORTIE_52_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_52_PARTY_NO, SORTIE_52_EPISODE_ID, SORTIE_52_FIELD_ID)
+            _check_and_recover_fatigue(client, SORTIE_52_PARTY_NO)
+            quick_expedition_check(client)
+            if total_runs % SORTIE_52_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_52_REST_SECONDS}s...")
+                time.sleep(SORTIE_52_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"5-2 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
         raise
