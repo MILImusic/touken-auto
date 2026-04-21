@@ -453,6 +453,28 @@ Q3: eventsally status=2 的真实原因？
   2. 若检测到重伤（HP ≤ 30%）→ 执行治疗，归城后重试
   3. 若无重伤且连续 2 次失败 → 判定为今日上限，停止循环
 
+■ 战斗模块重伤检测约束（必须遵守，违反会碎刀）
+  所有包含实战（battle/battle）的循环必须有三层检测：
+    1. 出阵前：run_repair_check(party_no) — 检查+治疗重伤刀
+    2. 道中（每个非最终战斗节点后）：getpartyinfo → is_heavily_injured
+       → 检测到重伤立即 break 停止出阵
+    3. 队长重伤：forward status!=0 → 立即 break
+
+  已检查通过的模块：
+    - sortie.py _run_single_sortie + 7个循环 ✓
+    - dungeon.py _run_dungeon_floor + 爬楼/单层循环 ✓
+    - parallel_past.py _run_single_parallel_past + 循环 ✓
+
+  不需要检测的模块：
+    - practice.py 演练 — 虚拟伤害，不造成实际 HP 损失
+    - battle.py run_battle_1_1 — 工具函数，调用者负责检测
+    - fatigue_recovery.py — 1-1 恢复，调用者负责检测
+
+  历史事故（2026-04-21）：
+    parallel_past.py 原本缺少道中重伤检测，只检查 forward status（队长重伤），
+    非队长刀重伤后继续打下一场 → 太郎太刀・極 碎刀。已修复。
+    教训：新增任何战斗循环时，必须包含完整三层检测。
+
 ■ 道中重伤检查相关 bug（2026-04-04 修复，dungeon.py + sortie.py）
   Bug 1：道中重伤检查误用 conquest 数据（dungeon.py 和 sortie.py 均有）
     conquest 无 hp/hp_max 字段，is_heavily_injured 永远返回 False，
