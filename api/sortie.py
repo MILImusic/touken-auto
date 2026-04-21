@@ -36,6 +36,26 @@ COUNTER_FORMATION: dict[int, int] = {
 from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, is_heavily_injured
 from .expedition import quick_expedition_check
 
+
+def _get_resources(client: ToukenClient) -> dict:
+    """从 home/index 获取当前资源"""
+    state = client._post("home/index")
+    return state.get("resource", {})
+
+
+def _log_resource_diff(start_res: dict, end_res: dict) -> None:
+    """打印资源变化汇总"""
+    items = [
+        ("charcoal", "木炭"), ("steel", "玉钢"),
+        ("coolant", "冷却材"), ("file", "砥石"),
+    ]
+    parts = []
+    for key, name in items:
+        diff = end_res.get(key, 0) - start_res.get(key, 0)
+        sign = "+" if diff >= 0 else ""
+        parts.append(f"{name}:{sign}{diff}")
+    logger.info(f"  资源变化：{'  '.join(parts)}")
+
 # ── 共用配置 ──────────────────────────────────────────────────
 FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队长位
 FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
@@ -295,6 +315,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
     按 Ctrl+C 手动停止。
     白山吉光现驻守 部隊1，与本队（部隊2）互不干扰，无需移除。
     """
+    start_res = _get_resources(client)
     initial_bill = get_bill(client)
     last_check_bill = initial_bill
     total_runs = 0
@@ -335,6 +356,10 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
             f"耗时 {str(elapsed).split('.')[0]}，"
             f"依赖札 {initial_bill} → {final_bill}（+{final_bill - initial_bill}）"
         )
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
@@ -342,6 +367,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
 
 def run_sortie_4_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 4-2（主砥石）。"""
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -364,6 +390,10 @@ def run_sortie_4_2_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"4-2 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
@@ -375,6 +405,7 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
     每 SORTIE_43_CHECK_INTERVAL 次固定休息 SORTIE_43_REST_SECONDS 秒，不检查依赖札。
     按 Ctrl+C 手动停止。
     """
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -401,6 +432,10 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"4-3 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
@@ -410,6 +445,7 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     每 SORTIE_73_CHECK_INTERVAL 次固定休息 SORTIE_73_REST_SECONDS 秒，不检查依赖札。
     按 Ctrl+C 手动停止。
     """
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -436,15 +472,16 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"7-3 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
 def run_sortie_7_4_loop(client: ToukenClient) -> None:
-    """
-    队伍3 无限循环刷 7-4。
-    每 SORTIE_74_CHECK_INTERVAL 次固定休息 SORTIE_74_REST_SECONDS 秒。
-    按 Ctrl+C 手动停止。
-    """
+    """队伍3 无限循环刷 7-4。"""
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -471,6 +508,10 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"7-4 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
@@ -478,6 +519,7 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
 
 def run_sortie_5_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 5-2（主木炭）。"""
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -500,6 +542,10 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"5-2 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
 
 
@@ -507,6 +553,7 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
 
 def run_sortie_6_1_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 6-1（主砥石，高速枪，马匹属性减半）。"""
+    start_res = _get_resources(client)
     total_runs = 0
     start_time = datetime.datetime.now()
     logger.info(
@@ -529,4 +576,8 @@ def run_sortie_6_1_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"6-1 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        try:
+            _log_resource_diff(start_res, _get_resources(client))
+        except Exception:
+            pass
         raise
