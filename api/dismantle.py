@@ -207,6 +207,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             kept_new.add(sword_id)
             from .composition import get_sword_name
             logger.info(f"  新刀保留：{get_sword_name(sword_id)}(id={sword_id}) — 仓库无保护版本，跳过刀解")
+        # 保护刀在远征中（不在 protected_map 但在 has_protected）→ 保留素材等远征回来
+        elif sword_id not in protected_map and sword_id in has_protected:
+            from .composition import get_sword_name
+            logger.debug(f"  远征保留：{get_sword_name(sword_id)}(id={sword_id}) — 保护刀在远征中，素材暂存")
         else:
             dismantleable.append(sword["serial_id"])
 
