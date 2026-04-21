@@ -140,7 +140,10 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     has_protected: set[int] = set()
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
-            has_protected.add(sword.get("sword_id"))
+            sid = sword.get("sword_id")
+            has_protected.add(sid)
+            if sword.get("kaika_level", 0) >= 1:
+                has_protected.add(sid - 1)  # 極化刀也标记原始 ID
 
     # 分类
     dismantleable: list[int] = []
