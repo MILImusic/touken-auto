@@ -41,9 +41,6 @@ FORGE_RECIPE: dict[str, int] = {
     "file": 700,
 }
 MILEAGE_EVENT_ID: int = 10498       # 当前活动 ID（每次活动需更新）
-MIN_FREE_SLOTS: int = 10            # 领取前至少需要的空位
-
-
 def check_forge_slots(state: dict) -> list[int]:
     """
     从 home/index 响应检查哪些锻造槽已完成。
@@ -79,27 +76,56 @@ def check_forge_slots(state: dict) -> list[int]:
 
 def _clean_inventory(client: ToukenClient) -> int:
     """
-    清理仓库（刀解 + 习合保护刀），不领受取箱。
-    返回释放的刀位数。
+    彻底清理仓库（不领受取箱），只保留：
+      - 保护刀、在队/内番的刀
+      - 短刀（含半成品，留给后续习合）
+      - 等待远征保护刀的素材
+      - 新刀（仓库无保护版本，保留一把）
+    其他全部习合/刀解。返回释放的刀位数。
     """
     from .dismantle import _get_forge_data, _classify_swords, _do_dismantle, \
         _do_composition_for_protected, MAX_DISMANTLE_PER_BATCH
-    from .composition import _load_tantou_db
+    from .composition import _load_tantou_db, _get_composition_data, \
+        TARGET_RANBU_LEVEL, _feed_target
 
     tantou_sword_ids = _load_tantou_db()
+    freed = 0
+
+    # 第一步：短刀互喂（不清理半成品，只是尽量合成释放位置）
+    comp_data = _get_composition_data(client)
+    for sword_id in tantou_sword_ids:
+        while True:
+            duty_sids = set(comp_data.get("duty", []))
+            all_unprotected = [
+                s for s in comp_data.get("sword", {}).values()
+                if s.get("sword_id") == sword_id
+                and s.get("protect", 0) == 0
+                and s.get("role_id", 0) == 0
+                and s.get("serial_id") not in duty_sids
+            ]
+            targets = [s for s in all_unprotected if s.get("ranbu_level", 0) < TARGET_RANBU_LEVEL]
+            if not targets:
+                break
+            targets.sort(key=lambda s: (s.get("ranbu_level", 0), s.get("ranbu_exp", 0)), reverse=True)
+            target = targets[0]
+            materials = [s for s in all_unprotected if s["serial_id"] != target["serial_id"]]
+            if not materials:
+                break
+            if _feed_target(client, target, materials, TARGET_RANBU_LEVEL):
+                comp_data = _get_composition_data(client)
+            else:
+                break
+
+    # 第二步：非短刀习合保护刀 + 刀解
     forge_data = _get_forge_data(client)
     dismantleable, comp_targets = _classify_swords(forge_data, tantou_sword_ids)
 
-    freed = 0
-
-    # 先习合保护刀
     if comp_targets:
         fed = _do_composition_for_protected(client, comp_targets)
         if fed > 0:
             forge_data = _get_forge_data(client)
             dismantleable, _ = _classify_swords(forge_data, tantou_sword_ids)
 
-    # 再刀解
     for i in range(0, len(dismantleable), MAX_DISMANTLE_PER_BATCH):
         batch = dismantleable[i:i + MAX_DISMANTLE_PER_BATCH]
         _do_dismantle(client, batch)
@@ -191,8 +217,8 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
                 logger.info(f"  ★ 新刀锻出！{name}(id={s.get('sword_id')}) ★")
             found_new = True
             if stop_on_new:
-                # 发 Telegram 通知
-                _notify_new_sword(new_swords)
+                names = [f"{get_sword_name(s.get('sword_id', 0))}(id={s.get('sword_id')})" for s in new_swords]
+                _notify_telegram(f"★ 限时锻造新刀！\n{chr(10).join(names)}")
                 logger.info("  发现新刀，停止后续锻造")
                 continue  # 不在这个槽开新锻造，但继续领其他完成的槽
 
@@ -208,13 +234,22 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
             if _has_enough_resources(state):
                 _start_forge(client, slot_no)
             else:
-                logger.info(f"  槽{slot_no} 资源不足，跳过开启新锻造")
+                res = state.get("resource", {})
+                msg = (
+                    f"槽{slot_no} 资源不足，跳过锻造\n"
+                    f"木炭:{res.get('charcoal',0)} 玉钢:{res.get('steel',0)} "
+                    f"冷却材:{res.get('coolant',0)} 砥石:{res.get('file',0)}\n"
+                    f"委托符:{res.get('bill',0)}\n"
+                    f"需要：各{FORGE_RECIPE['charcoal']}"
+                )
+                logger.warning(f"  {msg}")
+                _notify_telegram(msg)
 
     return found_new
 
 
-def _notify_new_sword(swords: list[dict]) -> None:
-    """新刀锻出时发 Telegram 通知"""
+def _notify_telegram(text: str) -> None:
+    """发 Telegram 通知"""
     import os
     import httpx
 
@@ -222,9 +257,6 @@ def _notify_new_sword(swords: list[dict]) -> None:
     chat_id = "YOUR_TELEGRAM_CHAT_ID"
     if not bot_token:
         return
-
-    names = [f"{get_sword_name(s.get('sword_id', 0))}(id={s.get('sword_id')})" for s in swords]
-    text = f"★ 限时锻造新刀！\n{chr(10).join(names)}"
     try:
         httpx.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
