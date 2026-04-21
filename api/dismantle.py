@@ -137,18 +137,28 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             if isinstance(val, int):
                 duty_sids.add(val)
 
+    # 提取远征中的 serial_id（远征中的刀不能习合）
+    expedition_sids: set[int] = set()
+    for party in forge_data.get("party", {}).values():
+        if isinstance(party, dict) and party.get("status") == 2:
+            for slot in (party.get("slot") or {}).values():
+                sid = slot.get("serial_id") if isinstance(slot, dict) else slot
+                if sid:
+                    expedition_sids.add(int(sid))
+
     # 构建保护刀映射：sword_id → {serial_id, ranbu_level, rarity, ranbu_exp, ...}
     # 極化刀同时映射原始 sword_id（-1），让未極化素材也能匹配
     protected_map: dict[int, dict] = {}  # sword_id → 保护刀数据
-    # 先检查 forge 数据是否有 kaika_level 字段
-    _sample = next(iter(swords.values()), {}) if swords else {}
-    has_kaika = "kaika_level" in _sample
-    if not has_kaika and swords:
-        logger.warning("forge 数据无 kaika_level 字段，極化刀映射可能失效")
 
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
+            serial_id = sword.get("serial_id")
             sid = sword.get("sword_id")
+            # 远征中的刀不能作为习合目标
+            on_expedition = serial_id in expedition_sids
+            if on_expedition:
+                # 仍然加入 has_protected（不误判新刀），但不加入 protected_map（不尝试习合）
+                continue
             # 取 ranbu_level 最低的保护刀（最需要喂的）
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
                 protected_map[sid] = sword
