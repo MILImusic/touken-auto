@@ -302,9 +302,9 @@ def run_all_repairs(
                     f"卸装后基础速度({base_mobile})≥白山({HAKUSAN_MOBILE})，无法自动治疗"
                 )
                 continue
-            logger.info(
-                f"部隊{pno} serial_id={sid} 重伤 HP={hp}/{hp_max} "
-                f"({hp * 100 // hp_max}%)，加入治疗队列"
+            logger.opt(colors=True).info(
+                f"<red>部隊{pno} serial_id={sid} 重伤 HP={hp}/{hp_max} "
+                f"({hp * 100 // hp_max}%)，加入治疗队列</red>"
             )
             to_heal.append((pno, order, sid))
 
@@ -312,7 +312,7 @@ def run_all_repairs(
         logger.info("全队无重伤刀")
         return
 
-    logger.info(f"共 {len(to_heal)} 把重伤刀，开始治疗（部隊{HAKUSAN_PARTY_NO}）...")
+    logger.opt(colors=True).info(f"<red>共 {len(to_heal)} 把重伤刀，开始治疗（部隊{HAKUSAN_PARTY_NO}）...</red>")
 
     # 白山当前御守：优先复用 partyinfo_cache，无缓存时单独查
     if HAKUSAN_PARTY_NO in partyinfo_cache:
@@ -415,7 +415,7 @@ def run_all_repairs(
             raise RuntimeError(
                 f"治疗失败：serial_id={injured_sid} 1-1后仍重伤（HP={hp_now}/{hp_max_now}）"
             )
-        logger.info(f"  serial_id={injured_sid} 治疗成功（HP={hp_now}/{hp_max_now}）")
+        logger.opt(colors=True).info(f"<green>  serial_id={injured_sid} 治疗成功（HP={hp_now}/{hp_max_now}）</green>")
 
         # 从 heal_pi 校准白山气力追踪值（1-1 结束后 getpartyinfo 数据新鲜）
         hakusan_sword_data = heal_pi.get("sword", {}).get(str(hakusan_sid), {})
@@ -493,7 +493,7 @@ def run_all_repairs(
             set_sword(client, HAKUSAN_PARTY_NO, order, sid)
             battle_sleep()
 
-    logger.info("所有重伤治疗完成")
+    logger.opt(colors=True).info("<green>所有重伤治疗完成</green>")
 
 
 # ── 单队检查入口（供出征模块按需调用）────────────────────────

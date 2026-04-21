@@ -325,8 +325,8 @@ def _run_single_sortie(
                 battle_sleep()
                 injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
                 if injured:
-                    logger.warning(
-                        f"  节点 {node_no} 后检测到重伤（serial_id={injured}），停止出阵"
+                    logger.opt(colors=True).warning(
+                        f"<red>  节点 {node_no} 后检测到道中重伤（serial_id={injured}），停止出阵</red>"
                     )
                     break
 
