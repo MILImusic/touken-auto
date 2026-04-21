@@ -49,13 +49,13 @@ def enable_forge_event():
 
 def _check_forge_if_enabled(client: ToukenClient) -> None:
     """休息间隙调用：如果启用了锻造检查，执行一轮"""
+    global _forge_event_enabled
     if not _forge_event_enabled:
         return
     try:
         from .forge_event import run_forge_check
         found_new = run_forge_check(client)
         if found_new:
-            global _forge_event_enabled
             _forge_event_enabled = False
             logger.info("发现新刀，已自动关闭锻造检查")
     except Exception as e:
