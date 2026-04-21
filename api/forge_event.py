@@ -91,9 +91,37 @@ def _clean_inventory(client: ToukenClient) -> int:
     tantou_sword_ids = _load_tantou_db()
     freed = 0
 
-    # 第一步：短刀互喂（不清理半成品，只是尽量合成释放位置）
+    # 第一步：短刀习合（保护短刀优先喂到 Lv10 → 未保护互喂到 Lv7）
+    from .composition import mark_protected_composed
     comp_data = _get_composition_data(client)
     for sword_id in tantou_sword_ids:
+        # 优先级1：保护短刀喂到 Lv10
+        duty_sids = set(comp_data.get("duty", []))
+        protected_targets = [
+            s for s in comp_data.get("sword", {}).values()
+            if s.get("sword_id") == sword_id
+            and s.get("protect", 0) >= 1
+            and s.get("ranbu_level", 0) < 10
+        ]
+        for pt in protected_targets:
+            compat_ids = {sword_id}
+            if pt.get("kaika_level", 0) >= 1:
+                compat_ids.add(sword_id - 1)
+            materials = [
+                s for s in comp_data.get("sword", {}).values()
+                if s.get("sword_id") in compat_ids
+                and s.get("protect", 0) == 0
+                and s.get("role_id", 0) == 0
+                and s.get("serial_id") not in duty_sids
+            ]
+            if not materials:
+                break
+            mark_protected_composed(pt["serial_id"])
+            if _feed_target(client, pt, materials, 10):
+                comp_data = _get_composition_data(client)
+                duty_sids = set(comp_data.get("duty", []))
+
+        # 优先级2：未保护短刀互喂到 Lv7
         while True:
             duty_sids = set(comp_data.get("duty", []))
             all_unprotected = [
