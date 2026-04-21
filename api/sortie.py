@@ -580,15 +580,19 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
         f"5-2 循环开始（队伍{SORTIE_52_PARTY_NO}，主木炭），"
         f"每 {REST_INTERVAL_MIN}-{REST_INTERVAL_MAX} 次随机休息"
     )
+    LIGHT_CHECK_INTERVAL = 5  # 气力/远征轻量检查间隔
+
     try:
         while True:
-            adjust_captain_for_fatigue(client, SORTIE_52_PARTY_NO)
+            if total_runs % LIGHT_CHECK_INTERVAL == 0:
+                adjust_captain_for_fatigue(client, SORTIE_52_PARTY_NO)
             run_repair_check(client, SORTIE_52_PARTY_NO)
             total_runs += 1
             logger.info(f"[第 {total_runs} 次] 出阵 5-2（队伍{SORTIE_52_PARTY_NO}）...")
             _run_single_sortie(client, SORTIE_52_PARTY_NO, SORTIE_52_EPISODE_ID, SORTIE_52_FIELD_ID)
-            _check_and_recover_fatigue(client, SORTIE_52_PARTY_NO)
-            quick_expedition_check(client)
+            if total_runs % LIGHT_CHECK_INTERVAL == 0:
+                _check_and_recover_fatigue(client, SORTIE_52_PARTY_NO)
+                quick_expedition_check(client)
             if total_runs >= next_rest:
                 logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_52_REST_SECONDS}s...")
                 time.sleep(SORTIE_52_REST_SECONDS)
