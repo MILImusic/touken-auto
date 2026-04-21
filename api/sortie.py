@@ -70,6 +70,13 @@ SORTIE_52_FIELD_ID:              int = 2   # 5-2
 SORTIE_52_CHECK_INTERVAL:        int = 15
 SORTIE_52_REST_SECONDS:          int = 5
 
+# ── 6-1 循环配置（主砥石，高速枪，马匹减半）──────────────────
+SORTIE_61_PARTY_NO:              int = 3
+SORTIE_61_EPISODE_ID:            int = 6
+SORTIE_61_FIELD_ID:              int = 1   # 6-1
+SORTIE_61_CHECK_INTERVAL:        int = 15
+SORTIE_61_REST_SECONDS:          int = 5
+
 # ── 7-3 循环配置（队伍3，固定休息，不检查依赖札）────────────
 SORTIE_73_PARTY_NO:              int = 3
 SORTIE_73_EPISODE_ID:            int = 7
@@ -493,4 +500,33 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
     except KeyboardInterrupt:
         elapsed = datetime.datetime.now() - start_time
         logger.info(f"5-2 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
+
+
+# ── 6-1 循环（主砥石，高速枪，马匹减半，推荐极短速度>150）───
+
+def run_sortie_6_1_loop(client: ToukenClient) -> None:
+    """队伍3 无限循环刷 6-1（主砥石，高速枪，马匹属性减半）。"""
+    total_runs = 0
+    start_time = datetime.datetime.now()
+    logger.info(
+        f"6-1 循环开始（队伍{SORTIE_61_PARTY_NO}，主砥石，高速枪/马匹减半），"
+        f"每 {SORTIE_61_CHECK_INTERVAL} 次休息 {SORTIE_61_REST_SECONDS}s"
+    )
+    try:
+        while True:
+            adjust_captain_for_fatigue(client, SORTIE_61_PARTY_NO)
+            run_repair_check(client, SORTIE_61_PARTY_NO)
+            total_runs += 1
+            logger.info(f"[第 {total_runs} 次] 出阵 6-1（队伍{SORTIE_61_PARTY_NO}）...")
+            _run_single_sortie(client, SORTIE_61_PARTY_NO, SORTIE_61_EPISODE_ID, SORTIE_61_FIELD_ID)
+            _check_and_recover_fatigue(client, SORTIE_61_PARTY_NO)
+            quick_expedition_check(client)
+            if total_runs % SORTIE_61_CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 {SORTIE_61_REST_SECONDS}s...")
+                time.sleep(SORTIE_61_REST_SECONDS)
+                logger.info("  休息结束，继续新一轮...")
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"6-1 循环结束 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
         raise
