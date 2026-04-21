@@ -43,11 +43,14 @@ for _fam in _SWORD_FAMILIES:
         _FAMILY_MAP[_sid] = _fam
 
 
-def get_sword_family(sword_id: int) -> set[int]:
+def get_sword_family(sword_id: int, kaika_level: int = 0) -> set[int]:
     """获取同一刀剣的所有形态 ID（含極化+1）"""
     if sword_id in _FAMILY_MAP:
         return _FAMILY_MAP[sword_id]
-    return {sword_id, sword_id + 1}  # 默认：原始 + 極化
+    # 标准極化：原始 ↔ 極化（+1）
+    if kaika_level >= 1:
+        return {sword_id - 1, sword_id}  # 極化刀 → 往回找原始
+    return {sword_id, sword_id + 1}      # 原始刀 → 往前找極化
 
 
 def _receive_non_tantou(client: ToukenClient) -> int:
@@ -144,7 +147,7 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
                 protected_map[sid] = sword
             # 同家族所有形态 ID 都映射到这把保护刀，让任意形态的素材都能匹配
-            for family_id in get_sword_family(sid):
+            for family_id in get_sword_family(sid, sword.get("kaika_level", 0)):
                 if family_id != sid:
                     if family_id not in protected_map or sword.get("ranbu_level", 0) < protected_map[family_id].get("ranbu_level", 10):
                         protected_map[family_id] = sword
@@ -158,7 +161,7 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
     has_protected: set[int] = set()
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
-            has_protected.update(get_sword_family(sword.get("sword_id")))
+            has_protected.update(get_sword_family(sword.get("sword_id"), sword.get("kaika_level", 0)))
 
     # 分类
     dismantleable: list[int] = []
