@@ -12,7 +12,7 @@
 
 配置：
   PRACTICE_PARTY_NO     = 3   # 演练出战队伍
-  PRACTICE_FORMATION_ID = 2   # 鶴翼の陣（侦查不足时也用此阵型）
+  PRACTICE_FORMATION_ID = 3   # 逆行阵（侦查不足时的默认阵型）
   PRACTICE_OPPONENTS    = 5   # 对手总数（num=1~5 全打）
 """
 
@@ -23,7 +23,7 @@ from .client import ToukenClient
 from .battle import battle_sleep
 
 PRACTICE_PARTY_NO:     int = 3
-PRACTICE_FORMATION_ID: int = 2   # 鶴翼の陣
+PRACTICE_FORMATION_ID: int = 3   # 逆行阵
 PRACTICE_OPPONENTS:    int = 5   # 对手编号 1~5
 
 

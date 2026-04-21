@@ -43,7 +43,7 @@ def get_party_fatigue(conquest_data: dict, party_info: dict) -> dict[int, int]:
 RECOVERY_EPISODE_ID = 1
 RECOVERY_FIELD_ID   = 1
 RECOVERY_BATTLES    = 2   # 1-1 共两场战斗
-FORMATION_ID        = 4   # 鱼鳞阵
+FORMATION_ID        = 3   # 逆行阵（侦察失败时的默认阵型）
 
 # 每次出阵之间等待时间（秒），加随机抖动模拟人类操作
 BATTLE_DELAY = 0.5  # 基准延迟，实际范围 0.0～1.5s
