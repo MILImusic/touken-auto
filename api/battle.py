@@ -176,6 +176,26 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
             run_battle_1_1(client, party_no)
         else:
             logger.warning(f"  serial_id={target_sid} 气力恢复超出 {max_rounds} 轮，当前值：{current_fat}")
+            if current_fat == 0:
+                _notify_fatigue_stuck(target_sid, max_rounds)
+
+
+def _notify_fatigue_stuck(serial_id: int, rounds: int) -> None:
+    """气力恢复卡在0时发 Telegram 通知"""
+    import os
+    import httpx
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = "YOUR_TELEGRAM_CHAT_ID"
+    if not bot_token:
+        return
+    try:
+        httpx.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": f"⚠ 气力恢复异常\nserial_id={serial_id} 跑了 {rounds} 轮 1-1 后气力仍为 0（可能过疲劳）"},
+            timeout=10,
+        )
+    except Exception:
+        pass
 
     # 全部完成，一次性还原队伍
     logger.info(f"  部隊{party_no} 还原队伍...")
