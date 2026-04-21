@@ -31,6 +31,24 @@ NON_TANTOU_SWORD_TYPES: str = "2,6,5,7,3,4,10"
 MAX_DISMANTLE_PER_BATCH: int = 30
 MAX_RECEIVE_PER_BATCH: int = 100
 
+# 多形态刀剣家族（形態変化 / 特，不走标准極化的 +1 规则）
+# 同一家族的所有 sword_id 视为"同一把刀"
+_SWORD_FAMILIES: list[set[int]] = [
+    {107, 108, 109, 110, 111},  # 髭切: base → 特1 → 特2 → 特3 → 極
+    {112, 113, 114, 115},       # 膝丸: base → 特1 → 特2 → 極
+]
+_FAMILY_MAP: dict[int, set[int]] = {}
+for _fam in _SWORD_FAMILIES:
+    for _sid in _fam:
+        _FAMILY_MAP[_sid] = _fam
+
+
+def get_sword_family(sword_id: int) -> set[int]:
+    """获取同一刀剣的所有形态 ID（含極化+1）"""
+    if sword_id in _FAMILY_MAP:
+        return _FAMILY_MAP[sword_id]
+    return {sword_id, sword_id + 1}  # 默认：原始 + 極化
+
 
 def _receive_non_tantou(client: ToukenClient) -> int:
     """
@@ -125,25 +143,22 @@ def _classify_swords(forge_data: dict, tantou_sword_ids: set[int]) -> tuple[list
             # 取 ranbu_level 最低的保护刀（最需要喂的）
             if sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[sid].get("ranbu_level", 10):
                 protected_map[sid] = sword
-            # 極化刀：同时用原始 sword_id 映射，让未極化素材能匹配
-            if sword.get("kaika_level", 0) >= 1:
-                original_sid = sid - 1
-                if original_sid not in protected_map or sword.get("ranbu_level", 0) < protected_map[original_sid].get("ranbu_level", 10):
-                    protected_map[original_sid] = sword
+            # 同家族所有形态 ID 都映射到这把保护刀，让任意形态的素材都能匹配
+            for family_id in get_sword_family(sid):
+                if family_id != sid:
+                    if family_id not in protected_map or sword.get("ranbu_level", 0) < protected_map[family_id].get("ranbu_level", 10):
+                        protected_map[family_id] = sword
 
     # 保护刀数量简要提示（不再逐条打印）
     unfed = {sid: s for sid, s in protected_map.items() if s.get("ranbu_level", 0) < 10}
     if unfed:
         logger.debug(f"保护刀映射：{len(protected_map)} 条（其中 {len(unfed)} 条 ranbu<10）")
 
-    # 构建「有保护版本」的 sword_id 集合（含極化映射的原始ID）
+    # 构建「有保护版本」的 sword_id 集合（含家族所有形态）
     has_protected: set[int] = set()
     for sword in swords.values():
         if sword.get("protect", 0) >= 1:
-            sid = sword.get("sword_id")
-            has_protected.add(sid)
-            if sword.get("kaika_level", 0) >= 1:
-                has_protected.add(sid - 1)  # 極化刀也标记原始 ID
+            has_protected.update(get_sword_family(sword.get("sword_id")))
 
     # 分类
     dismantleable: list[int] = []
