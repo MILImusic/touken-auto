@@ -142,3 +142,44 @@ def run_parallel_past(client: ToukenClient) -> None:
         completed += 1
 
     logger.info(f"异去结束，共完成 {completed} 次")
+
+
+def run_parallel_past_loop(client: ToukenClient) -> None:
+    """
+    异去无限循环：反复出阵直到服务端返回次数耗尽。
+    适用于活动期间购买了额外次数的场景。
+    每 CHECK_INTERVAL 次检查远征。按 Ctrl+C 手动停止。
+    """
+    import datetime
+    from .expedition import run_expedition_cycle
+    from .sortie import quick_expedition_check
+
+    CHECK_INTERVAL = 10
+    total_runs = 0
+    start_time = datetime.datetime.now()
+
+    logger.info(f"异去循环开始（队伍{PARALLEL_PAST_PARTY_NO}），每 {CHECK_INTERVAL} 次检查远征")
+
+    try:
+        while True:
+            total_runs += 1
+            logger.info(f"[异去循环 第{total_runs}次]")
+
+            ok = _run_single_parallel_past(client)
+            if not ok:
+                logger.info("服务端返回次数耗尽，循环结束")
+                break
+
+            quick_expedition_check(client)
+
+            if total_runs % CHECK_INTERVAL == 0:
+                logger.info(f"[第 {total_runs} 次] 休息 5s...")
+                time.sleep(5)
+
+    except KeyboardInterrupt:
+        elapsed = datetime.datetime.now() - start_time
+        logger.info(f"异去循环中断 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
+        raise
+
+    elapsed = datetime.datetime.now() - start_time
+    logger.info(f"异去循环完成 — 共 {total_runs} 次，耗时 {str(elapsed).split('.')[0]}")
