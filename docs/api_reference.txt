@@ -491,6 +491,19 @@ Q3: eventsally status=2 的真实原因？
     - RuntimeError 从 for 循环直接传到 main loop，跳过紧急归还代码
       → 改为 for 循环体 try/except，异常后先归还再 break
 
+■ 函数定义位置约束（必须遵守，违反会导致代码静默失效）
+  在函数内部定义 helper 函数时，绝不能插在主逻辑和还原/清理代码之间。
+  Python 会把后续代码当作 helper 函数的一部分，还原代码永远不执行。
+
+  历史事故（2026-04-22）：
+    battle.py recover_sword_fatigue 的还原代码（set_sword 放回所有成员）
+    被 _notify_fatigue_stuck 函数定义隔开，缩进到了通知函数内部。
+    气力恢复后队伍永远不还原 → 远征队/出阵队从满编变成只剩1人。
+    修复：_notify_fatigue_stuck 移到函数外部，还原代码回到正确位置。
+
+  规则：helper 函数定义放在主函数外部（模块级），或放在主函数开头。
+  绝不放在循环和还原代码之间。
+
 ■ 刀装相关约束
   - 刀装会在战斗中被打掉（正常游戏机制），长期刷图后刀装数量会减少
   - equip_snapshot 反映的是治疗前的装备状态，可能已经被打掉了部分
