@@ -63,10 +63,10 @@ def remove_sword(client: ToukenClient, party_no: int, order: int, serial_id: int
     })
 
 
-def set_sword(client: ToukenClient, party_no: int, order: int, serial_id: int) -> None:
-    """将刀放回队伍的指定槽位"""
+def set_sword(client: ToukenClient, party_no: int, order: int, serial_id: int) -> dict:
+    """将刀放回队伍的指定槽位，返回 setsword 响应（含完整 party 数据）"""
     logger.debug(f"  归位：部隊{party_no} 槽位{order} serial_id={serial_id}")
-    client._post("party/setsword", extra={
+    return client._post("party/setsword", extra={
         "party_no": party_no,
         "order": order,
         "serial_id": serial_id,

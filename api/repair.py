@@ -483,13 +483,27 @@ def run_all_repairs(
         # 归还至原队伍（必须执行，不能被装备验证阻断）
         if orig_pno != HAKUSAN_PARTY_NO:
             if orig_order == 1 and displaced_order is not None and displaced_sid is not None:
-                # 两步还原：先把重伤刀放回原队（非队长槽），再换回队长位
+                # 队长还原：伤刀放回非队长槽 → 交换到队长位
                 set_sword(client, orig_pno, displaced_order, injured_sid)
                 battle_sleep()
-                set_sword(client, orig_pno, 1, injured_sid)
+                resp = set_sword(client, orig_pno, 1, injured_sid)
+                battle_sleep()
+                # 验证交换结果：临时队长是否还在队伍里
+                party_data = resp.get("party", {}).get(str(orig_pno), {})
+                slots_after = party_data.get("slot", {})
+                displaced_found = any(
+                    (isinstance(s, dict) and s.get("serial_id") == displaced_sid)
+                    for s in slots_after.values()
+                )
+                if not displaced_found:
+                    logger.warning(
+                        f"  交换后临时队长 serial_id={displaced_sid} 不在队伍中，手动补回槽{displaced_order}..."
+                    )
+                    set_sword(client, orig_pno, displaced_order, displaced_sid)
+                    battle_sleep()
             else:
                 set_sword(client, orig_pno, orig_order, injured_sid)
-            battle_sleep()
+                battle_sleep()
             logger.info(f"  serial_id={injured_sid} 已归还至 部隊{orig_pno} 槽{orig_order}")
             _current_injured = None  # 归还成功，清除跟踪
 
@@ -507,7 +521,18 @@ def run_all_repairs(
             if ci["order"] == 1 and ci["displaced_order"] is not None:
                 set_sword(client, ci["pno"], ci["displaced_order"], ci["sid"])
                 battle_sleep()
-                set_sword(client, ci["pno"], 1, ci["sid"])
+                resp = set_sword(client, ci["pno"], 1, ci["sid"])
+                battle_sleep()
+                # 验证临时队长是否还在
+                party_data = resp.get("party", {}).get(str(ci["pno"]), {})
+                slots_after = party_data.get("slot", {})
+                d_sid = ci["displaced_sid"]
+                if d_sid and not any(
+                    (isinstance(s, dict) and s.get("serial_id") == d_sid)
+                    for s in slots_after.values()
+                ):
+                    logger.warning(f"  紧急归还：补回临时队长 serial_id={d_sid}...")
+                    set_sword(client, ci["pno"], ci["displaced_order"], d_sid)
             else:
                 set_sword(client, ci["pno"], ci["order"], ci["sid"])
             battle_sleep()
