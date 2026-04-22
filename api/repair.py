@@ -360,10 +360,12 @@ def run_all_repairs(
         remove_sword(client, HAKUSAN_PARTY_NO, order, sid)
         battle_sleep()
 
-    # 4. 逐一治疗（try/finally 确保异常时也归还刀到原队）
-    _current_injured: dict | None = None  # 跟踪当前正在治疗的刀，异常时用于归还
+    # 4. 逐一治疗
+    _current_injured: dict | None = None
+    _heal_error: Exception | None = None
 
     for orig_pno, orig_order, injured_sid in to_heal:
+      try:
         logger.info(f"治疗 serial_id={injured_sid}（原队伍 部隊{orig_pno} 槽{orig_order}）...")
         _current_injured = {"pno": orig_pno, "order": orig_order, "sid": injured_sid,
                            "displaced_order": None, "displaced_sid": None, "moved": False}
@@ -518,39 +520,38 @@ def run_all_repairs(
                 battle_sleep()
             logger.info(f"  serial_id={injured_sid} 已归还至 部隊{orig_pno} 槽{orig_order}")
             _current_injured = None  # 归还成功，清除跟踪
-
-    # 异常时紧急归还（治疗中途出错，确保刀回到原队）
-    if _current_injured and _current_injured["moved"]:
-        ci = _current_injured
-        try:
-            logger.warning(f"  治疗异常，紧急归还 serial_id={ci['sid']} 至 部隊{ci['pno']} 槽{ci['order']}...")
-            # 先从部队1移除（可能已移除，忽略错误）
+      except Exception as e:
+        _heal_error = e
+        # 紧急归还
+        if _current_injured and _current_injured["moved"]:
+            ci = _current_injured
             try:
-                remove_sword(client, HAKUSAN_PARTY_NO, 2, ci["sid"])
-            except Exception:
-                pass
-            # 归还到原队
-            if ci["order"] == 1 and ci["displaced_order"] is not None:
-                set_sword(client, ci["pno"], ci["displaced_order"], ci["sid"])
+                logger.warning(f"  治疗异常（{e}），紧急归还 serial_id={ci['sid']}...")
+                try:
+                    remove_sword(client, HAKUSAN_PARTY_NO, 2, ci["sid"])
+                except Exception:
+                    pass
+                if ci["order"] == 1 and ci["displaced_order"] is not None:
+                    set_sword(client, ci["pno"], ci["displaced_order"], ci["sid"])
+                    battle_sleep()
+                    resp = set_sword(client, ci["pno"], 1, ci["sid"])
+                    battle_sleep()
+                    party_data = resp.get("party", {}).get(str(ci["pno"]), {})
+                    slots_after = party_data.get("slot", {})
+                    d_sid = ci["displaced_sid"]
+                    if d_sid and not any(
+                        (isinstance(s, dict) and s.get("serial_id") == d_sid)
+                        for s in slots_after.values()
+                    ):
+                        logger.warning(f"  补回临时队长 serial_id={d_sid}...")
+                        set_sword(client, ci["pno"], ci["displaced_order"], d_sid)
+                else:
+                    set_sword(client, ci["pno"], ci["order"], ci["sid"])
                 battle_sleep()
-                resp = set_sword(client, ci["pno"], 1, ci["sid"])
-                battle_sleep()
-                # 验证临时队长是否还在
-                party_data = resp.get("party", {}).get(str(ci["pno"]), {})
-                slots_after = party_data.get("slot", {})
-                d_sid = ci["displaced_sid"]
-                if d_sid and not any(
-                    (isinstance(s, dict) and s.get("serial_id") == d_sid)
-                    for s in slots_after.values()
-                ):
-                    logger.warning(f"  紧急归还：补回临时队长 serial_id={d_sid}...")
-                    set_sword(client, ci["pno"], ci["displaced_order"], d_sid)
-            else:
-                set_sword(client, ci["pno"], ci["order"], ci["sid"])
-            battle_sleep()
-            logger.info(f"  紧急归还成功")
-        except Exception as e:
-            logger.error(f"  紧急归还失败：{e}")
+                logger.info(f"  紧急归还成功")
+            except Exception as re_err:
+                logger.error(f"  紧急归还失败：{re_err}")
+        break  # 跳出 for 循环，继续执行还原+验证
 
     # 5. 还原 部隊1 槽2-6
     if party2_snapshot:
@@ -589,6 +590,10 @@ def run_all_repairs(
                     next_slot = next((i for i in range(next_slot + 1, 7) if i not in slots_used), None)
 
     logger.opt(colors=True).info("<green>所有重伤治疗完成</green>")
+
+    # 归还+验证都做完了，再抛出治疗中的异常
+    if _heal_error:
+        raise _heal_error
 
 
 # ── 单队检查入口（供出征模块按需调用）────────────────────────
