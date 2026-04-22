@@ -179,6 +179,18 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
             if current_fat == 0:
                 _notify_fatigue_stuck(target_sid, max_rounds)
 
+    # 全部完成，一次性还原队伍
+    logger.info(f"  部隊{party_no} 还原队伍...")
+    set_sword(client, party_no, 1, slots[1])
+    battle_sleep()
+    for order, sid in sorted(slots.items()):
+        if order == 1:
+            continue
+        set_sword(client, party_no, order, sid)
+        battle_sleep()
+    client.get_conquest_data()
+    logger.info(f"部隊{party_no} 气力恢复完成")
+
 
 def _notify_fatigue_stuck(serial_id: int, rounds: int) -> None:
     """气力恢复卡在0时发 Telegram 通知"""
@@ -196,16 +208,3 @@ def _notify_fatigue_stuck(serial_id: int, rounds: int) -> None:
         )
     except Exception:
         pass
-
-    # 全部完成，一次性还原队伍
-    logger.info(f"  部隊{party_no} 还原队伍...")
-    set_sword(client, party_no, 1, slots[1])
-    battle_sleep()
-    for order, sid in sorted(slots.items()):
-        if order == 1:
-            continue
-        set_sword(client, party_no, order, sid)
-        battle_sleep()
-    client.get_conquest_data()
-
-    logger.info(f"部隊{party_no} 气力恢复完成")
