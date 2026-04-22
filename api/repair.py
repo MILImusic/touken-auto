@@ -611,5 +611,8 @@ def run_repair_check(client: ToukenClient, party_no: int) -> bool:
     )
     if has_injury:
         run_all_repairs(client)
+        # 治疗后验证队伍人数（与 sortie 循环启动时的初始值对比）
+        from .sortie import verify_party_after_repair
+        verify_party_after_repair(client, party_no)
         return True
     return False

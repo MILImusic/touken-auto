@@ -37,8 +37,36 @@ COUNTER_FORMATION: dict[int, int] = {
 from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, is_heavily_injured
 from .expedition import quick_expedition_check
 
+# 出阵队伍初始编成（循环启动时记录，治疗后验证用）
+_initial_party_members: dict[int, int] = {}  # {party_no: member_count}
+
 # 限时锻造检查（可选，启用时在休息间隙自动处理锻造槽）
 _forge_event_enabled: bool = False
+
+
+def snapshot_party(client: ToukenClient, party_no: int) -> None:
+    """循环启动时调用，记录队伍初始人数"""
+    global _initial_party_members
+    pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+    count = sum(1 for sd in pi.get("sword", {}).values() if sd)
+    _initial_party_members[party_no] = count
+    logger.debug(f"部隊{party_no} 初始编成：{count} 人")
+
+
+def verify_party_after_repair(client: ToukenClient, party_no: int) -> None:
+    """治疗后验证队伍人数是否与初始一致，不一致则报错停止"""
+    expected = _initial_party_members.get(party_no)
+    if expected is None:
+        return
+    pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+    current = sum(1 for sd in pi.get("sword", {}).values() if sd)
+    if current < expected:
+        logger.opt(colors=True).error(
+            f"<red>部隊{party_no} 治疗后人数异常：初始{expected}人 → 现{current}人！停止运行</red>"
+        )
+        raise RuntimeError(
+            f"部隊{party_no} 治疗后丢失成员（初始{expected}人 → 现{current}人）"
+        )
 
 
 def enable_forge_event():
@@ -419,6 +447,7 @@ def run_sortie_4_4_loop(client: ToukenClient) -> None:
 def run_sortie_4_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 4-2（主砥石）。"""
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
@@ -465,6 +494,7 @@ def run_sortie_4_3_loop(client: ToukenClient) -> None:
     按 Ctrl+C 手动停止。
     """
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
@@ -513,6 +543,7 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
     按 Ctrl+C 手动停止。
     """
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
@@ -557,6 +588,7 @@ def run_sortie_7_3_loop(client: ToukenClient) -> None:
 def run_sortie_7_4_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 7-4。"""
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
@@ -603,6 +635,7 @@ def run_sortie_7_4_loop(client: ToukenClient) -> None:
 def run_sortie_5_2_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 5-2（主木炭）。"""
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
@@ -645,6 +678,7 @@ def run_sortie_5_2_loop(client: ToukenClient) -> None:
 def run_sortie_6_1_loop(client: ToukenClient) -> None:
     """队伍3 无限循环刷 6-1（主砥石，高速枪，马匹属性减半）。"""
     start_res = _get_resources(client)
+    snapshot_party(client, SORTIE_44_PARTY_NO)
     total_runs = 0
     next_rest = random.randint(REST_INTERVAL_MIN, REST_INTERVAL_MAX)
     start_time = datetime.datetime.now()
