@@ -160,20 +160,32 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
             set_sword(client, party_no, 1, target_sid)
             battle_sleep()
 
-        max_rounds = 5
-        current_fat = 0
-        for round_no in range(1, max_rounds + 1):
-            conquest_data = client.get_conquest_data()
-            party_info = conquest_data.get("party", {}).get(str(party_no), {})
-            fatigue_map = get_party_fatigue(conquest_data, party_info)
-            current_fat = fatigue_map.get(target_sid, 0)
+        # 先查当前气力，过疲劳（=0）直接跳过不尝试恢复
+        conquest_data = client.get_conquest_data()
+        party_info = conquest_data.get("party", {}).get(str(party_no), {})
+        fatigue_map = get_party_fatigue(conquest_data, party_info)
+        current_fat = fatigue_map.get(target_sid, 0)
 
+        if current_fat == 0:
+            from .notify import notify_fatigue_stuck
+            logger.opt(colors=True).warning(
+                f"<red>  serial_id={target_sid} 气力=0（过疲劳），跳过恢复（出战会触发异常检测）</red>"
+            )
+            notify_fatigue_stuck(target_sid, 0)
+            continue
+
+        max_rounds = 5
+        for round_no in range(1, max_rounds + 1):
             logger.info(f"  round {round_no}：serial_id={target_sid} 气力={current_fat}")
             if current_fat >= FATIGUE_TARGET:
                 logger.info(f"  serial_id={target_sid} 气力恢复完成")
                 break
 
             run_battle_1_1(client, party_no)
+            conquest_data = client.get_conquest_data()
+            party_info = conquest_data.get("party", {}).get(str(party_no), {})
+            fatigue_map = get_party_fatigue(conquest_data, party_info)
+            current_fat = fatigue_map.get(target_sid, 0)
         else:
             logger.warning(f"  serial_id={target_sid} 气力恢复超出 {max_rounds} 轮，当前值：{current_fat}")
             if current_fat == 0:
