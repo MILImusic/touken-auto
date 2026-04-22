@@ -38,35 +38,86 @@ from .repair import run_repair_check, find_hakusan_serial_id, HAKUSAN_PARTY_NO, 
 from .expedition import quick_expedition_check
 
 # 出阵队伍初始编成（循环启动时记录，治疗后验证用）
-_initial_party_members: dict[int, int] = {}  # {party_no: member_count}
+_initial_party_members: dict[int, dict[int, int]] = {}  # {party_no: {order: serial_id}}
 
 # 限时锻造检查（可选，启用时在休息间隙自动处理锻造槽）
 _forge_event_enabled: bool = False
 
 
 def snapshot_party(client: ToukenClient, party_no: int) -> None:
-    """循环启动时调用，记录队伍初始人数"""
+    """循环启动时调用，记录队伍初始编成（order → serial_id）"""
     global _initial_party_members
-    pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-    count = sum(1 for sd in pi.get("sword", {}).values() if sd)
-    _initial_party_members[party_no] = count
-    logger.debug(f"部隊{party_no} 初始编成：{count} 人")
+    conquest = client.get_conquest_data()
+    slots = get_party_slots(conquest, party_no)
+    _initial_party_members[party_no] = dict(slots)
+    logger.debug(f"部隊{party_no} 初始编成：{len(slots)} 人 — {slots}")
 
 
 def verify_party_after_repair(client: ToukenClient, party_no: int) -> None:
-    """治疗后验证队伍人数是否与初始一致，不一致则报错停止"""
+    """治疗后验证队伍编成，缺人则补回+自动装备，补不回才停止"""
     expected = _initial_party_members.get(party_no)
-    if expected is None:
+    if not expected:
         return
-    pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-    current = sum(1 for sd in pi.get("sword", {}).values() if sd)
-    if current < expected:
+
+    conquest = client.get_conquest_data()
+    current_slots = get_party_slots(conquest, party_no)
+    current_sids = set(current_slots.values())
+    expected_sids = set(expected.values())
+
+    missing = expected_sids - current_sids
+    if not missing:
+        return
+
+    logger.opt(colors=True).warning(
+        f"<red>部隊{party_no} 治疗后丢失 {len(missing)} 人：{missing}</red>"
+    )
+
+    # 尝试补回
+    used_orders = set(current_slots.keys())
+    for sid in missing:
+        # 找这把刀原来在哪个槽
+        orig_order = next((o for o, s in expected.items() if s == sid), None)
+        # 如果原槽空着就放原槽，否则找空槽
+        if orig_order and orig_order not in used_orders:
+            target_order = orig_order
+        else:
+            target_order = next((i for i in range(2, 7) if i not in used_orders), None)
+
+        if target_order is None:
+            logger.error(f"  serial_id={sid} 无空槽可补回！")
+            continue
+
+        logger.info(f"  补回 serial_id={sid} 至 部隊{party_no} 槽{target_order}...")
+        set_sword(client, party_no, target_order, sid)
+        battle_sleep()
+        used_orders.add(target_order)
+
+        # 检查刀装，没有则自动装备
+        pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
+        battle_sleep()
+        sword_data = pi.get("sword", {}).get(str(sid), {})
+        has_equip = any(sword_data.get(f"equip_serial_id{i}") for i in range(1, 5))
+        if not has_equip:
+            logger.info(f"  serial_id={sid} 无刀装，自动装备...")
+            client._post("equip/autosetequip", extra={
+                "sword_serial_id": sid,
+                "is_event": 0,
+                "is_firstattack": 1,
+            })
+            battle_sleep()
+
+    # 补回后再验证一次
+    conquest2 = client.get_conquest_data()
+    final_slots = get_party_slots(conquest2, party_no)
+    final_sids = set(final_slots.values())
+    still_missing = expected_sids - final_sids
+    if still_missing:
         logger.opt(colors=True).error(
-            f"<red>部隊{party_no} 治疗后人数异常：初始{expected}人 → 现{current}人！停止运行</red>"
+            f"<red>部隊{party_no} 补回失败，仍缺 {still_missing}，停止运行</red>"
         )
-        raise RuntimeError(
-            f"部隊{party_no} 治疗后丢失成员（初始{expected}人 → 现{current}人）"
-        )
+        raise RuntimeError(f"部隊{party_no} 编成修复失败，缺 {still_missing}")
+    else:
+        logger.opt(colors=True).info(f"<green>部隊{party_no} 编成已修复（{len(final_slots)} 人）</green>")
 
 
 def enable_forge_event():
