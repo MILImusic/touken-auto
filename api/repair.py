@@ -312,6 +312,18 @@ def run_all_repairs(
         logger.info("全队无重伤刀")
         return
 
+    # 记录治疗前各队编成（治疗后验证用）
+    pre_heal_party_members: dict[int, set[int]] = {}
+    for pno_str, party in conquest_data.get("party", {}).items():
+        pno = int(pno_str)
+        members = set()
+        for slot in (party.get("slot") or {}).values():
+            sid = slot.get("serial_id") if isinstance(slot, dict) else slot
+            if sid:
+                members.add(int(sid))
+        if members:
+            pre_heal_party_members[pno] = members
+
     logger.opt(colors=True).info(f"<red>共 {len(to_heal)} 把重伤刀，开始治疗（部隊{HAKUSAN_PARTY_NO}）...</red>")
 
     # 白山当前御守：优先复用 partyinfo_cache，无缓存时单独查
@@ -546,6 +558,35 @@ def run_all_repairs(
         for order, sid in sorted(party2_snapshot.items()):
             set_sword(client, HAKUSAN_PARTY_NO, order, sid)
             battle_sleep()
+
+    # 6. 验证各队编成人数是否与治疗前一致
+    verify_conquest = client.get_conquest_data()
+    for pno, expected_members in pre_heal_party_members.items():
+        if pno == HAKUSAN_PARTY_NO:
+            continue  # 部队1 由 party2_snapshot 管理
+        current_members = set()
+        party = verify_conquest.get("party", {}).get(str(pno), {})
+        for slot in (party.get("slot") or {}).values():
+            sid = slot.get("serial_id") if isinstance(slot, dict) else slot
+            if sid:
+                current_members.add(int(sid))
+        missing = expected_members - current_members
+        if missing:
+            logger.opt(colors=True).error(
+                f"<red>部隊{pno} 治疗后丢失成员：{missing}（治疗前{len(expected_members)}人 → 现{len(current_members)}人）</red>"
+            )
+            # 尝试补回丢失的成员
+            slots_used = {
+                int(k) for k, v in (party.get("slot") or {}).items()
+                if isinstance(v, dict) and v.get("serial_id")
+            }
+            next_slot = next((i for i in range(2, 7) if i not in slots_used), None)
+            for m_sid in missing:
+                if next_slot:
+                    logger.info(f"  补回 serial_id={m_sid} 至 部隊{pno} 槽{next_slot}...")
+                    set_sword(client, pno, next_slot, m_sid)
+                    battle_sleep()
+                    next_slot = next((i for i in range(next_slot + 1, 7) if i not in slots_used), None)
 
     logger.opt(colors=True).info("<green>所有重伤治疗完成</green>")
 
