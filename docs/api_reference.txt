@@ -463,8 +463,24 @@ Q3: eventsally status=2 的真实原因？
      同一 ID 导致临时队长被踢出队伍的 bug
 
   历史事故（2026-04-22）：
-    治疗队长重伤时，还原步骤用了两次 set_sword(同一 injured_sid)：
-    第一步放到槽2 → 第二步挪到槽1 → 临时队长被踢出 → 队伍残缺 → 后续治疗失败
+    Bug 1：治疗队长重伤时，还原步骤用了两次 set_sword(同一 injured_sid)：
+      第一步放到槽2 → 第二步挪到槽1 → 临时队长被踢出 → 队伍残缺 → 后续治疗失败
+
+    Bug 2：autosetequip 验证时查的是部队1（HAKUSAN_PARTY_NO），
+      但刀已经从部队1 remove_sword 移出 → getpartyinfo 查不到 → 误判装备失败
+      → RuntimeError → 归还步骤跳过 → 队伍空编
+      修复：验证移到 remove_sword 之前（刀还在部队1时验证）
+
+    Bug 3：RuntimeError 导致归还步骤完全跳过，无兜底机制
+      修复：加 _current_injured 跟踪 + 异常后紧急归还
+
+■ 刀装相关约束
+  - 刀装会在战斗中被打掉（正常游戏机制），长期刷图后刀装数量会减少
+  - equip_snapshot 反映的是治疗前的装备状态，可能已经被打掉了部分
+  - 还原刀装时 setequip 次数取决于快照中有多少非空槽位
+  - 如果快照中无刀装（has_touso=False）→ 调 autosetequip 自动装备
+  - autosetequip 需要刀在某个队伍中才能通过 getpartyinfo 验证
+  - 长期刷图后刀装库存可能耗尽 → autosetequip 失败 → 需停止运行
 
 ■ 战斗模块重伤检测约束（必须遵守，违反会碎刀）
   所有包含实战（battle/battle）的循环必须有三层检测：
