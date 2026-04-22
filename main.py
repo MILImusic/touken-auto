@@ -343,19 +343,8 @@ def _run_mode(client: ToukenClient, mode: int, state: dict, params: dict | None 
 
 def _send_mode_summary(mode: int, error: Exception | None = None) -> None:
     """模式完成后发 Telegram 汇总"""
-    if not TELEGRAM_BOT_TOKEN:
-        return
-    try:
-        status = f"异常：{error}" if error else "正常完成"
-        text = f"模式 {mode}（{MODES.get(mode, '未知')}）{status}"
-        import httpx as _httpx
-        _httpx.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-            timeout=10,
-        )
-    except Exception:
-        pass
+    status = f"异常：{error}" if error else "正常完成"
+    _send_telegram(f"模式 {mode}（{MODES.get(mode, '未知')}）{status}")
 
 
 def _show_mode_menu() -> None:
@@ -519,25 +508,7 @@ def _beep(sound: str = "Basso") -> None:
         pass
 
 
-def _send_telegram(text: str) -> None:
-    """发送 Telegram 文本通知，失败静默"""
-    if not TELEGRAM_BOT_TOKEN:
-        return
-    try:
-        httpx.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-            timeout=10,
-        )
-    except Exception:
-        pass
-
-
-def _notify_telegram(error: Exception) -> None:
-    """报错时发送 Telegram 通知，失败静默"""
-    tb = traceback.format_exception(error)
-    tb_short = "".join(tb[-3:])[:1000]
-    _send_telegram(f"⚠ 刀剣乱舞脚本异常退出\n\n{type(error).__name__}: {error}\n\n{tb_short}")
+from api.notify import send_telegram as _send_telegram, notify_error as _notify_telegram
 
 
 if __name__ == "__main__":

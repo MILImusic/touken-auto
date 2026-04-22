@@ -246,8 +246,8 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
                 logger.info(f"  ★ 新刀锻出！{name}(id={s.get('sword_id')}) ★")
             found_new = True
             if stop_on_new:
-                names = [f"{get_sword_name(s.get('sword_id', 0))}(id={s.get('sword_id')})" for s in new_swords]
-                _notify_telegram(f"★ 限时锻造新刀！\n{chr(10).join(names)}")
+                from .notify import notify_new_sword
+                notify_new_sword(new_swords)
                 logger.info("  发现新刀，停止后续锻造")
                 continue  # 不在这个槽开新锻造，但继续领其他完成的槽
 
@@ -264,33 +264,10 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
                 _start_forge(client, slot_no)
             else:
                 res = state.get("resource", {})
-                msg = (
-                    f"槽{slot_no} 资源不足，跳过锻造\n"
-                    f"木炭:{res.get('charcoal',0)} 玉钢:{res.get('steel',0)} "
-                    f"冷却材:{res.get('coolant',0)} 砥石:{res.get('file',0)}\n"
-                    f"委托符:{res.get('bill',0)}\n"
-                    f"需要：各{FORGE_RECIPE['charcoal']}"
-                )
-                logger.warning(f"  {msg}")
-                _notify_telegram(msg)
+                from .notify import notify_resource_shortage
+                logger.warning(f"  槽{slot_no} 资源不足，跳过锻造")
+                notify_resource_shortage(slot_no, res, FORGE_RECIPE["charcoal"])
 
     return found_new
 
 
-def _notify_telegram(text: str) -> None:
-    """发 Telegram 通知"""
-    import os
-    import httpx
-
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    chat_id = "YOUR_TELEGRAM_CHAT_ID"
-    if not bot_token:
-        return
-    try:
-        httpx.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
-            timeout=10,
-        )
-    except Exception:
-        pass
