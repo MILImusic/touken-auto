@@ -450,10 +450,7 @@ def run_all_repairs(
             })
             battle_sleep()
 
-        # 移出槽2，还原刀装（重伤刀自身御守不还原，skip_item=True）
-        remove_sword(client, HAKUSAN_PARTY_NO, 2, injured_sid)
-        battle_sleep()
-
+        # 还原刀装（刀还在部队1槽2，方便验证）
         if has_equip:
             _restore_equip(client, injured_sid, equip_snapshot, skip_item=True)
 
@@ -467,9 +464,21 @@ def run_all_repairs(
                 "is_firstattack":  1,
             })
             battle_sleep()
-            # 验证：刀已从部队1移出，需要先放回原队再查 getpartyinfo
-            # 这里只记录 warning，不再 raise（归还优先于装备验证）
-            logger.debug(f"  autosetequip 已调用，跳过验证（刀不在任何队伍中）")
+            # 验证（刀还在部队1，getpartyinfo 能查到）
+            verify_resp = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
+            battle_sleep()
+            sword_after = verify_resp.get("sword", {}).get(str(injured_sid), {})
+            equipped = any(sword_after.get(f"equip_serial_id{i}") for i in range(1, 5))
+            if not equipped:
+                logger.error(
+                    f"  serial_id={injured_sid} 自动装备失败（刀装库存不足？），"
+                    f"裸装出阵风险极高，停止运行"
+                )
+                raise RuntimeError(f"autosetequip 失败：serial_id={injured_sid} 无可用刀装")
+
+        # 移出槽2
+        remove_sword(client, HAKUSAN_PARTY_NO, 2, injured_sid)
+        battle_sleep()
 
         # 归还至原队伍（必须执行，不能被装备验证阻断）
         if orig_pno != HAKUSAN_PARTY_NO:
