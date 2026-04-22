@@ -173,9 +173,12 @@ def run_parallel_past_loop(client: ToukenClient) -> None:
 
     logger.info(f"异去循环开始（队伍{PARALLEL_PAST_PARTY_NO}），每 {CHECK_INTERVAL} 次检查远征")
 
+    from .sortie import adjust_captain_for_fatigue, _check_and_recover_fatigue
+
     try:
         while True:
-            # 出阵前重伤检查
+            # 出阵前气力+重伤检查
+            adjust_captain_for_fatigue(client, PARALLEL_PAST_PARTY_NO)
             run_repair_check(client, PARALLEL_PAST_PARTY_NO)
 
             total_runs += 1
@@ -186,6 +189,7 @@ def run_parallel_past_loop(client: ToukenClient) -> None:
                 logger.info("服务端返回次数耗尽，循环结束")
                 break
 
+            _check_and_recover_fatigue(client, PARALLEL_PAST_PARTY_NO)
             quick_expedition_check(client)
 
             if total_runs % CHECK_INTERVAL == 0:
