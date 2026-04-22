@@ -168,11 +168,11 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
 
         if current_fat == 0:
             from .notify import notify_fatigue_stuck
-            logger.opt(colors=True).warning(
-                f"<red>  serial_id={target_sid} 气力=0（过疲劳），跳过恢复（出战会触发异常检测）</red>"
+            logger.opt(colors=True).error(
+                f"<red>  serial_id={target_sid} 气力=0（过疲劳），停止运行（出战会触发封号）</red>"
             )
             notify_fatigue_stuck(target_sid, 0)
-            continue
+            raise RuntimeError(f"过疲劳检测：serial_id={target_sid} 气力=0，停止脚本")
 
         max_rounds = 5
         for round_no in range(1, max_rounds + 1):
