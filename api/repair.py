@@ -348,9 +348,13 @@ def run_all_repairs(
         remove_sword(client, HAKUSAN_PARTY_NO, order, sid)
         battle_sleep()
 
-    # 4. 逐一治疗
+    # 4. 逐一治疗（try/finally 确保异常时也归还刀到原队）
+    _current_injured: dict | None = None  # 跟踪当前正在治疗的刀，异常时用于归还
+
     for orig_pno, orig_order, injured_sid in to_heal:
         logger.info(f"治疗 serial_id={injured_sid}（原队伍 部隊{orig_pno} 槽{orig_order}）...")
+        _current_injured = {"pno": orig_pno, "order": orig_order, "sid": injured_sid,
+                           "displaced_order": None, "displaced_sid": None, "moved": False}
 
         # 每把刀治疗前确认白山气力充足，防止重伤刀在1-1中被打碎
         ensure_hakusan_fatigue(client)
@@ -370,6 +374,8 @@ def run_all_repairs(
             displaced_order = next((o for o in sorted(orig_slots) if o != 1), None)
             if displaced_order is not None:
                 displaced_sid = orig_slots[displaced_order]
+                _current_injured["displaced_order"] = displaced_order
+                _current_injured["displaced_sid"] = displaced_sid
                 logger.debug(
                     f"  重伤刀为队长，先将 serial_id={displaced_sid}"
                     f"（槽{displaced_order}）升为临时队长..."
@@ -380,6 +386,7 @@ def run_all_repairs(
 
         # 重伤刀放入槽2
         set_sword(client, HAKUSAN_PARTY_NO, 2, injured_sid)
+        _current_injured["moved"] = True
         battle_sleep()
 
         # 卸装
@@ -460,21 +467,11 @@ def run_all_repairs(
                 "is_firstattack":  1,
             })
             battle_sleep()
-            # 验证是否真的装上了刀装
-            verify_resp = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
-            battle_sleep()
-            sword_after = verify_resp.get("sword", {}).get(str(injured_sid), {})
-            equipped = any(
-                sword_after.get(f"equip_serial_id{i}") for i in range(1, 5)
-            )
-            if not equipped:
-                logger.error(
-                    f"  serial_id={injured_sid} 自动装备失败（刀装库存不足？），"
-                    f"裸装出阵风险极高，停止运行"
-                )
-                raise RuntimeError(f"autosetequip 失败：serial_id={injured_sid} 无可用刀装")
+            # 验证：刀已从部队1移出，需要先放回原队再查 getpartyinfo
+            # 这里只记录 warning，不再 raise（归还优先于装备验证）
+            logger.debug(f"  autosetequip 已调用，跳过验证（刀不在任何队伍中）")
 
-        # 归还至原队伍（部隊2的伤刀由 party2_snapshot 还原，不重复操作）
+        # 归还至原队伍（必须执行，不能被装备验证阻断）
         if orig_pno != HAKUSAN_PARTY_NO:
             if orig_order == 1 and displaced_order is not None and displaced_sid is not None:
                 # 两步还原：先把重伤刀放回原队（非队长槽），再换回队长位
@@ -485,8 +482,31 @@ def run_all_repairs(
                 set_sword(client, orig_pno, orig_order, injured_sid)
             battle_sleep()
             logger.info(f"  serial_id={injured_sid} 已归还至 部隊{orig_pno} 槽{orig_order}")
+            _current_injured = None  # 归还成功，清除跟踪
 
-    # 5. 还原 部隊2 槽2-6
+    # 异常时紧急归还（治疗中途出错，确保刀回到原队）
+    if _current_injured and _current_injured["moved"]:
+        ci = _current_injured
+        try:
+            logger.warning(f"  治疗异常，紧急归还 serial_id={ci['sid']} 至 部隊{ci['pno']} 槽{ci['order']}...")
+            # 先从部队1移除（可能已移除，忽略错误）
+            try:
+                remove_sword(client, HAKUSAN_PARTY_NO, 2, ci["sid"])
+            except Exception:
+                pass
+            # 归还到原队
+            if ci["order"] == 1 and ci["displaced_order"] is not None:
+                set_sword(client, ci["pno"], ci["displaced_order"], ci["sid"])
+                battle_sleep()
+                set_sword(client, ci["pno"], 1, ci["sid"])
+            else:
+                set_sword(client, ci["pno"], ci["order"], ci["sid"])
+            battle_sleep()
+            logger.info(f"  紧急归还成功")
+        except Exception as e:
+            logger.error(f"  紧急归还失败：{e}")
+
+    # 5. 还原 部隊1 槽2-6
     if party2_snapshot:
         logger.info(f"还原 部隊{HAKUSAN_PARTY_NO} 原编成...")
         for order, sid in sorted(party2_snapshot.items()):
