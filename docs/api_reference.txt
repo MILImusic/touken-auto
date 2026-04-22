@@ -474,12 +474,22 @@ Q3: eventsally status=2 的真实原因？
     Bug 3：RuntimeError 导致归还步骤完全跳过，无兜底机制
       修复：加 _current_injured 跟踪 + 异常后紧急归还
 
-■ 治疗后编成验证（2026-04-22 新增）
-  治疗前记录各队 serial_id 集合，治疗全部完成后用 conquest 对比。
-  三层防护：
+■ 治疗后编成验证（2026-04-22 新增，2026-04-23 修正）
+  sortie 循环启动时 snapshot_party 记录初始编成（order→serial_id），
+  每次 run_repair_check 治疗后 verify_party_after_repair 与初始值对比。
+
+  四层防护：
     1. 队长交换后：读 setsword 响应，检查临时队长是否还在队伍中，不在则补回
-    2. 异常崩溃时：_current_injured 跟踪 + 紧急归还 + 验证临时队长
+    2. 异常崩溃时：for 循环体 try/except 捕获 → 紧急归还 → break → 后续步骤继续执行
     3. 全部治疗结束后：conquest 对比治疗前各队人数，丢失成员自动补回空槽
+    4. sortie 循环级验证：verify_party_after_repair 对比循环启动时初始编成，
+       缺人 → 补回原槽 + autosetequip → 再验证 → 补不回才停止
+
+  历史教训（2026-04-22）：
+    - pre_heal_party_members 每次 run_all_repairs 重新捕获，队伍已丢人时
+      捕获的就是错误状态，验证永远通过 → 改为与循环启动时初始值对比
+    - RuntimeError 从 for 循环直接传到 main loop，跳过紧急归还代码
+      → 改为 for 循环体 try/except，异常后先归还再 break
 
 ■ 刀装相关约束
   - 刀装会在战斗中被打掉（正常游戏机制），长期刷图后刀装数量会减少
