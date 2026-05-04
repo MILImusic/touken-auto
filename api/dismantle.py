@@ -24,7 +24,7 @@
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
+from .battle import api_sleep
 from .composition import _load_tantou_db, _do_union, _swords_needed_for_target, _get_composition_data, MAX_MATERIAL_PER_UNION, register_sword_names, mark_protected_composed
 
 NON_TANTOU_SWORD_TYPES: str = "2,6,5,7,3,4,10"
@@ -70,7 +70,7 @@ def _receive_non_tantou(client: ToukenClient) -> int:
         "item_type": 0,
         "sword_type": NON_TANTOU_SWORD_TYPES,
     })
-    battle_sleep()
+    api_sleep()
 
     receive_items = list_resp.get("receive", {})
     if not receive_items:
@@ -94,7 +94,7 @@ def _receive_non_tantou(client: ToukenClient) -> int:
         "item_type": 0,
         "sword_type": NON_TANTOU_SWORD_TYPES,
     })
-    battle_sleep()
+    api_sleep()
 
     received = resp.get("serial_ids", [])
     received_count = len(received) if received else 0
@@ -109,7 +109,7 @@ def _receive_non_tantou(client: ToukenClient) -> int:
 def _get_forge_data(client: ToukenClient) -> dict:
     """调用 forge 获取所有刀剑数据"""
     resp = client._post("forge")
-    battle_sleep()
+    api_sleep()
     return resp
 
 
@@ -241,7 +241,7 @@ def _do_dismantle(client: ToukenClient, serial_ids: list[int]) -> None:
     client._post("forge/dismantle", extra={
         "serial_id": serial_id_str,
     })
-    battle_sleep()
+    api_sleep()
     logger.info(f"  刀解完成：{len(serial_ids)} 把")
 
 

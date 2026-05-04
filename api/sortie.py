@@ -25,7 +25,7 @@ import time
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep, FORMATION_ID, set_sword, remove_sword, get_party_slots, recover_sword_fatigue
+from .battle import api_sleep, battle_sleep, FORMATION_ID, set_sword, remove_sword, get_party_slots, recover_sword_fatigue
 import datetime
 
 # 阵型克制表：enemy_formation → counter_formation
@@ -89,12 +89,12 @@ def verify_party_after_repair(client: ToukenClient, party_no: int) -> None:
 
         logger.info(f"  补回 serial_id={sid} 至 部隊{party_no} 槽{target_order}...")
         set_sword(client, party_no, target_order, sid)
-        battle_sleep()
+        api_sleep()
         used_orders.add(target_order)
 
         # 检查刀装，没有则自动装备
         pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-        battle_sleep()
+        api_sleep()
         sword_data = pi.get("sword", {}).get(str(sid), {})
         has_equip = any(sword_data.get(f"equip_serial_id{i}") for i in range(1, 5))
         if not has_equip:
@@ -104,7 +104,7 @@ def verify_party_after_repair(client: ToukenClient, party_no: int) -> None:
                 "is_event": 0,
                 "is_firstattack": 1,
             })
-            battle_sleep()
+            api_sleep()
 
     # 补回后再验证一次
     conquest2 = client.get_conquest_data()
@@ -177,8 +177,8 @@ def _log_resource_diff(start_res: dict, end_res: dict) -> None:
     logger.info(f"  资源变化：{'  '.join(parts)}")
 
 # ── 共用配置 ──────────────────────────────────────────────────
-REST_INTERVAL_MIN:          int = 20  # 休息间隔最小次数
-REST_INTERVAL_MAX:          int = 50  # 休息间隔最大次数
+REST_INTERVAL_MIN:          int = 10  # 休息间隔最小次数
+REST_INTERVAL_MAX:          int = 20  # 休息间隔最大次数
 FATIGUE_LOW_THRESHOLD:      int = 70  # 非队长气力低于此值则换至队长位
 FATIGUE_CRITICAL_THRESHOLD: int = 40  # 低于此值即使只有1把也触发1-1恢复
 
@@ -266,9 +266,9 @@ def remove_hakusan_for_sortie(client: ToukenClient) -> None:
         f"移除白山吉光：槽1↔槽{last_order}（serial_id={last_sid}升为新队长）..."
     )
     set_sword(client, HAKUSAN_PARTY_NO, last_order, hakusan_sid)
-    battle_sleep()
+    api_sleep()
     remove_sword(client, HAKUSAN_PARTY_NO, last_order, hakusan_sid)
-    battle_sleep()
+    api_sleep()
     logger.info(f"  白山已移除，部隊{HAKUSAN_PARTY_NO} 新队长 serial_id={last_sid}")
 
 
@@ -319,7 +319,7 @@ def adjust_captain_for_fatigue(client: ToukenClient, party_no: int) -> None:
         f"换至队长位（槽1）"
     )
     set_sword(client, party_no, 1, candidate_sid)
-    battle_sleep()
+    api_sleep()
 
 
 # ── 气力恢复检查（出阵后调用）────────────────────────────────
@@ -363,7 +363,7 @@ def _run_single_sortie(
     skip_last_battle=True 时，最终节点（is_finish=True）不战斗直接归城，减少刀装消耗。
     """
     client._post("sally")
-    battle_sleep()
+    api_sleep()
 
     client._post("sally/sally", extra={
         "episode_id": episode_id,
@@ -411,7 +411,7 @@ def _run_single_sortie(
             # 道中重伤检查：非最终节点战斗后，有重伤则立刻停止
             if not is_finish:
                 pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-                battle_sleep()
+                api_sleep()
                 injured = [str_sid for str_sid, sd in pi.get("sword", {}).items() if is_heavily_injured(sd)]
                 if injured:
                     logger.opt(colors=True).warning(

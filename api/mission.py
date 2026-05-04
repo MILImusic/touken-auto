@@ -17,7 +17,7 @@
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
+from .battle import api_sleep
 
 MISSION_CATEGORY_MAIN:  int = 1   # 主线任务
 MISSION_CATEGORY_DAILY: int = 2   # 每日任务
@@ -34,7 +34,7 @@ def _claim(client: ToukenClient, category: int, count: int, event_id: int, label
         "count":    count,
         "event_id": event_id,
     })
-    battle_sleep()
+    api_sleep()
 
     if resp.get("status", 0) != 0:
         logger.debug(f"  {label}：无可领取（status={resp.get('status')}）")
@@ -72,7 +72,7 @@ def run_mission_rewards(client: ToukenClient, state: dict) -> None:
 
     # 先进入任务页（导航用，无 JSON 响应）
     client._post("mission/index")
-    battle_sleep()
+    api_sleep()
 
     total = 0
     total += _claim(client, MISSION_CATEGORY_MAIN,  badge, 0,        "主线任务")

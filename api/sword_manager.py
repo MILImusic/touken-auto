@@ -12,7 +12,6 @@
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
 from .composition import (
     _load_tantou_db, _save_tantou_db, _receive_tantou,
     _get_composition_data, _composition_loop, _print_summary,

@@ -4,3 +4,16 @@ __pycache__/
 .DS_Store
 .env
 data/
+
+# 登录状态
+auth_state.json
+
+# Chrome net-log（含 token）
+/tmp/touken-chrome-net.json
+
+# 日志
+*.log
+
+# IDE
+.idea/
+.vscode/

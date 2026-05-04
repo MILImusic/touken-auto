@@ -28,7 +28,7 @@ from pathlib import Path
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
+from .battle import api_sleep
 
 # 持久化文件
 _TANTOU_DB_PATH = Path(__file__).parent.parent / "data" / "tantou_sword_ids.json"
@@ -148,7 +148,7 @@ def _receive_tantou(client: ToukenClient) -> tuple[int, set[int]]:
         "item_type": 0,
         "sword_type": 1,
     })
-    battle_sleep()
+    api_sleep()
 
     # 从 receive 字段提取 serial_ids 和 sword_ids
     receive_items = list_resp.get("receive", {})
@@ -183,7 +183,7 @@ def _receive_tantou(client: ToukenClient) -> tuple[int, set[int]]:
         "item_type": 0,
         "sword_type": 1,
     })
-    battle_sleep()
+    api_sleep()
 
     received = resp.get("serial_ids", [])
     received_count = len(received) if received else 0
@@ -198,7 +198,7 @@ def _receive_tantou(client: ToukenClient) -> tuple[int, set[int]]:
 def _get_composition_data(client: ToukenClient) -> dict:
     """调用 composition/index 获取所有刀剑数据"""
     resp = client._post("composition/index")
-    battle_sleep()
+    api_sleep()
     return resp.get("composition", resp)
 
 
@@ -252,7 +252,7 @@ def _do_union(client: ToukenClient, base_serial_id: int, material_serial_ids: li
         "base_serial_id": base_serial_id,
         "material_serial_id": material_str,
     })
-    battle_sleep()
+    api_sleep()
     logger.info(f"  习合完成：base={base_serial_id}，素材 {len(material_serial_ids)} 把")
 
 

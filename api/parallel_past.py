@@ -26,7 +26,7 @@ import time
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep, FORMATION_ID
+from .battle import api_sleep, battle_sleep, FORMATION_ID
 from .repair import run_repair_check, is_heavily_injured
 
 PARALLEL_PAST_PARTY_NO:   int = 3
@@ -59,16 +59,16 @@ def _run_single_parallel_past(client: ToukenClient) -> bool:
     """
     # 1. 进入出阵地图
     sally_resp = client._post("sally")
-    battle_sleep()
+    api_sleep()
 
     # 2. 日常对话（仅 sally 响应含 script 时）
     scene_id = _extract_scene_id(sally_resp)
     if scene_id is not None:
         logger.debug(f"  检测到日常对话（scene_id={scene_id}），播放...")
         client._post("scene/reproduce", extra={"scene_id": scene_id})
-        battle_sleep()
+        api_sleep()
         client._post("scene/save", extra={"scene_id": scene_id})
-        battle_sleep()
+        api_sleep()
 
     # 3. 选队出阵
     sally_resp2 = client._post("sally/parallelpastsally", extra={
@@ -134,7 +134,7 @@ def _run_single_parallel_past(client: ToukenClient) -> bool:
 
     # 战斗结束后游戏自动返回出阵地图，需要发送 sally 确认回到地图页
     client._post("sally")
-    battle_sleep()
+    api_sleep()
 
     return True
 

@@ -20,7 +20,7 @@ import time
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
+from .battle import api_sleep, battle_sleep
 
 PRACTICE_PARTY_NO:     int = 3
 PRACTICE_FORMATION_ID: int = 3   # 逆行阵
@@ -34,7 +34,7 @@ def run_practice_cycle(client: ToukenClient) -> None:
     """
     # 打开演练页（HTML UI 入口，token via Set-Cookie）
     client._post("practice")
-    battle_sleep()
+    api_sleep()
 
     completed = 0
     for num in range(1, PRACTICE_OPPONENTS + 1):
@@ -42,7 +42,7 @@ def run_practice_cycle(client: ToukenClient) -> None:
 
         # 1. 选择对手
         client._post("practice/offer", extra={"num": num})
-        battle_sleep()
+        api_sleep()
 
         # 2. 扫描（选出战队伍）；status=2 表示该对手本日已打完
         scout_resp = client._post("battle/practicescout", extra={

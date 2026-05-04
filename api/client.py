@@ -10,6 +10,7 @@
   - _post() 自动处理两种情况
 """
 
+import os
 import time
 import httpx
 from loguru import logger
@@ -41,7 +42,7 @@ class ToukenClient:
                 "Accept-Language": "zh-CN,zh;q=0.9",
             },
             cookies={"sword": sword},
-            proxy="http://127.0.0.1:7897",
+            proxy=os.getenv("HTTP_PROXY") or None,
             timeout=30.0,
         )
 

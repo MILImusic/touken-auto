@@ -23,7 +23,7 @@ from loguru import logger
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CHROME_PROFILE_DIR = "Profile 1"
-CHROME_USER_DATA = "/Users/toevskyastora/Library/Application Support/Google/Chrome"
+CHROME_USER_DATA = str(Path.home() / "Library/Application Support/Google/Chrome")
 GAME_URL = "https://play.games.dmm.com/game/tohken"
 NET_LOG_PATH = "/tmp/touken-chrome-net.json"
 TEMPLATES_DIR = Path(__file__).parent / "templates"

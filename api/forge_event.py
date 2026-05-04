@@ -25,11 +25,12 @@
   MILEAGE_EVENT_ID = 10498  （当前活动，需手动更新）
 """
 
+import os
 import datetime
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep
+from .battle import api_sleep
 from .composition import get_sword_name
 
 # ── 配置 ──────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ FORGE_RECIPE: dict[str, int] = {
     "coolant": 700,
     "file": 700,
 }
-MILEAGE_EVENT_ID: int = 10498       # 当前活动 ID（每次活动需更新）
+MILEAGE_EVENT_ID: int = int(os.getenv("MILEAGE_EVENT_ID", "0"))  # 限时锻造活动 ID（从抓包获取）
 def check_forge_slots(state: dict) -> list[int]:
     """
     从 home/index 响应检查哪些锻造槽已完成。
@@ -168,7 +169,7 @@ def _complete_forge(client: ToukenClient, slot_no: int) -> list[dict]:
     返回 sword 列表（每把含 sword_id, is_new_sword, serial_id）。
     """
     resp = client._post("forge/completemultiple", extra={"slot_no": slot_no})
-    battle_sleep()
+    api_sleep()
     swords = resp.get("sword", [])
     if swords:
         names = [get_sword_name(s.get("sword_id", 0)) for s in swords]
@@ -192,7 +193,7 @@ def _start_forge(client: ToukenClient, slot_no: int) -> bool:
         "mileage_event_id": MILEAGE_EVENT_ID,
     }
     resp = client._post("forge/startmultiple", extra=extra)
-    battle_sleep()
+    api_sleep()
     status = resp.get("status", 0) if isinstance(resp, dict) else 0
     if status != 0:
         logger.warning(f"  槽{slot_no} 开始锻造失败（status={status}）")
@@ -219,7 +220,7 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
     """
     # 1. 获取最新状态
     state = client._post("home/index")
-    battle_sleep()
+    api_sleep()
 
     completed_slots = check_forge_slots(state)
     if not completed_slots:
@@ -259,7 +260,7 @@ def run_forge_check(client: ToukenClient, stop_on_new: bool = True) -> bool:
         # 6. 开新一轮（如果没发现新刀且资源够）
         if not found_new:
             state = client._post("home/index")
-            battle_sleep()
+            api_sleep()
             if _has_enough_resources(state):
                 _start_forge(client, slot_no)
             else:

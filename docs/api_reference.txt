@@ -397,7 +397,7 @@ Q3: eventsally status=2 的真实原因？
     - pyautogui.locateOnScreen 在 Retina 上有 bug，直接用 cv2.matchTemplate
 
   Chrome 配置：
-    Profile：/Users/toevskyastora/Library/Application Support/Google/Chrome/Profile 1
+    Profile：~/Library/Application Support/Google/Chrome/Profile 1
     启动参数：--profile-directory="Profile 1" --log-net-log=/tmp/touken-chrome-net.json
     模板图片：auth/templates/（google_login.png, green_arrow.png, honmaru.png）
 

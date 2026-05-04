@@ -10,6 +10,7 @@ situation.conquest[party_no]:
   finished_at != ""  →  出征中，finished_at 为预计回收时间
 """
 
+import os
 from datetime import datetime
 from dataclasses import dataclass
 from loguru import logger
@@ -72,12 +73,21 @@ def send_expedition(client: ToukenClient, party_no: int, field_id: int) -> dict:
 
 # 各部隊出征目标配置：party_no → field_id
 # 队1（白山吉光专属治疗队）不参与远征，不在此配置中
-EXPEDITION_TARGETS: dict[int, int] = {
-    2: 8,    # 2队 → 2-4
-    3: 14,   # 3队 → 4-2（极化短刀）
-    4: 17,   # 4队 → 5-1（太刀）
-    5: 18,   # 5队 → 5-2
-}
+# 格式：部队号:地图ID，逗号分隔（例：2:8,4:17,5:18）
+_DEFAULT_TARGETS = "2:8,3:14,4:17,5:18"
+
+def _parse_expedition_targets(raw: str) -> dict[int, int]:
+    targets = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if ":" in pair:
+            party, field = pair.split(":", 1)
+            targets[int(party)] = int(field)
+    return targets
+
+EXPEDITION_TARGETS: dict[int, int] = _parse_expedition_targets(
+    os.getenv("EXPEDITION_TARGETS", _DEFAULT_TARGETS)
+)
 
 # 只在回收后才重新发出（登录时空闲不自动出征）
 RESEND_ONLY_PARTIES: set[int] = {3}

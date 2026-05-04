@@ -12,7 +12,7 @@ from loguru import logger
 
 from .client import ToukenClient
 from .battle import (
-    battle_sleep, get_party_slots, run_battle_1_1,
+    api_sleep, get_party_slots, run_battle_1_1,
     set_sword, remove_sword, FATIGUE_TARGET,
 )
 
@@ -26,7 +26,7 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
 
     # 获取队伍信息和气力
     pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-    battle_sleep()
+    api_sleep()
     swords = pi.get("sword", {})
 
     if not swords:
@@ -59,7 +59,7 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
     first_order = next((o for o, sid in original_slots.items() if sid == first_sid), None)
     if first_order and first_order != 1:
         set_sword(client, party_no, 1, first_sid)
-        battle_sleep()
+        api_sleep()
 
     # 一次性清空槽2-6
     cur_data = client.get_conquest_data()
@@ -68,7 +68,7 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
         if order == 1:
             continue
         remove_sword(client, party_no, order, sid)
-        battle_sleep()
+        api_sleep()
 
     logger.info("队伍已清场，开始逐刀恢复...")
 
@@ -79,7 +79,7 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
         # 换队长（第一把已经在位）
         if i > 0:
             set_sword(client, party_no, 1, target_sid)
-            battle_sleep()
+            api_sleep()
 
         # 跑1-1直到满气力
         max_rounds = 10
@@ -87,7 +87,7 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
             run_battle_1_1(client, party_no)
 
             check_pi = client._post("party/getpartyinfo", extra={"party_no": party_no})
-            battle_sleep()
+            api_sleep()
             sword_data = check_pi.get("sword", {}).get(str(target_sid), {})
             fat = sword_data.get("fatigue", 0)
             logger.info(f"    round {round_no}：气力={fat}")
@@ -101,11 +101,11 @@ def run_fatigue_recovery(client: ToukenClient, party_no: int) -> None:
     # 全部恢复完，一次性还原队伍
     logger.info("全部恢复完成，还原队伍...")
     set_sword(client, party_no, 1, original_slots[1])
-    battle_sleep()
+    api_sleep()
     for order, sid in sorted(original_slots.items()):
         if order == 1:
             continue
         set_sword(client, party_no, order, sid)
-        battle_sleep()
+        api_sleep()
 
     logger.info(f"部隊{party_no} 全员气力恢复完成")

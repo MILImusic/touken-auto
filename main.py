@@ -38,7 +38,7 @@ load_dotenv()
 UID    = os.getenv("UID", "14052501")
 SERVER = os.getenv("SERVER", "w021")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = "YOUR_TELEGRAM_CHAT_ID"
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ANSI 颜色
 _C = {

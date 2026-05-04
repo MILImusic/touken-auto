@@ -45,12 +45,21 @@ RECOVERY_FIELD_ID   = 1
 RECOVERY_BATTLES    = 2   # 1-1 共两场战斗
 FORMATION_ID        = 3   # 逆行阵（侦察失败时的默认阵型）
 
-# 每次出阵之间等待时间（秒），加随机抖动模拟人类操作
-BATTLE_DELAY = 0.5  # 基准延迟，实际范围 0.0～1.5s
+# 非战斗请求延迟（编成、治疗、锻造等）
+API_DELAY_MIN = 1.0
+API_DELAY_MAX = 3.0
+
+# 战斗请求延迟（出阵、前进、战斗）
+BATTLE_DELAY_MIN = 8.0
+BATTLE_DELAY_MAX = 10.0
+
+
+def api_sleep() -> None:
+    time.sleep(random.uniform(API_DELAY_MIN, API_DELAY_MAX))
 
 
 def battle_sleep() -> None:
-    time.sleep(BATTLE_DELAY + random.uniform(-0.5, 1.0))
+    time.sleep(random.uniform(BATTLE_DELAY_MIN, BATTLE_DELAY_MAX))
 
 
 def remove_sword(client: ToukenClient, party_no: int, order: int, serial_id: int) -> None:
@@ -143,7 +152,7 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
     first_order = next((o for o, sid in slots.items() if sid == first_sid), None)
     if first_order and first_order != 1:
         set_sword(client, party_no, 1, first_sid)
-        battle_sleep()
+        api_sleep()
 
     # 一次性清空槽2-6
     cur_data = client.get_conquest_data()
@@ -152,13 +161,13 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
         if order == 1:
             continue
         remove_sword(client, party_no, order, sid)
-        battle_sleep()
+        api_sleep()
 
     # 逐把换队长跑1-1
     for i, target_sid in enumerate(low_fatigue_sids):
         if i > 0:
             set_sword(client, party_no, 1, target_sid)
-            battle_sleep()
+            api_sleep()
 
         # 先查当前气力，过疲劳（=0）直接跳过不尝试恢复
         conquest_data = client.get_conquest_data()
@@ -195,12 +204,12 @@ def recover_sword_fatigue(client: ToukenClient, party_no: int, low_fatigue_sids:
     # 全部完成，一次性还原队伍
     logger.info(f"  部隊{party_no} 还原队伍...")
     set_sword(client, party_no, 1, slots[1])
-    battle_sleep()
+    api_sleep()
     for order, sid in sorted(slots.items()):
         if order == 1:
             continue
         set_sword(client, party_no, order, sid)
-        battle_sleep()
+        api_sleep()
     client.get_conquest_data()
     logger.info(f"部隊{party_no} 气力恢复完成")
 

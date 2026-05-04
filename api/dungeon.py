@@ -31,7 +31,7 @@ import time
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import battle_sleep, get_party_slots, remove_sword, set_sword, recover_sword_fatigue
+from .battle import api_sleep, battle_sleep, get_party_slots, remove_sword, set_sword, recover_sword_fatigue
 from .repair import run_repair_check, run_all_repairs, is_heavily_injured
 from .expedition import quick_expedition_check
 
@@ -95,14 +95,14 @@ def _sort_fatigued_swords_to_front(client: ToukenClient) -> None:
     # 优化：只有1把低气力刀且不在槽1 → 直接 swap，1次API代替12次
     if len(low_swords) == 1 and new_sids[0] != current_slot1_sid:
         set_sword(client, DUNGEON_PARTY_NO, 1, new_sids[0])
-        battle_sleep()
+        api_sleep()
         logger.info("队伍3重排完成（单刀swap）")
         return
 
     # 多把刀需要重排：全队拆装
     if new_sids[0] != current_slot1_sid:
         set_sword(client, DUNGEON_PARTY_NO, 1, new_sids[0])
-        battle_sleep()
+        api_sleep()
 
     # 重新获取最新槽位（setsword swap 后位置可能变化），移除槽2-6
     cur_data = client.get_conquest_data()
@@ -111,12 +111,12 @@ def _sort_fatigued_swords_to_front(client: ToukenClient) -> None:
         if order == 1:
             continue
         remove_sword(client, DUNGEON_PARTY_NO, order, sid)
-        battle_sleep()
+        api_sleep()
 
     # 按新顺序放置槽2-6（new_sids[0] 已在槽1）
     for i, sid in enumerate(new_sids[1:], start=1):
         set_sword(client, DUNGEON_PARTY_NO, orders[i], sid)
-        battle_sleep()
+        api_sleep()
 
     logger.info("队伍3重排完成")
 
@@ -171,20 +171,20 @@ def _run_dungeon_floor(
             f"直接结算清理残留会话..."
         )
         client._post("sally/resetsallystatus")
-        battle_sleep()
+        api_sleep()
 
         # eventsally 失败时触发全队重伤检查+治疗。
         # 重伤阈值为 HEAVY_INJURY_RATIO（≤30%），对应游戏实测重伤标准。
         logger.warning("  eventsally 失败，触发全队重伤检查...")
         client._post("sally/updateautoplayflaginsally", extra={"type": 3})
-        battle_sleep()
+        api_sleep()
         client._post("party/list")
-        battle_sleep()
+        api_sleep()
         run_all_repairs(client)
 
         # 气力检查仍需 getpartyinfo
         getpartyinfo_resp = client._post("party/getpartyinfo", extra={"party_no": DUNGEON_PARTY_NO})
-        battle_sleep()
+        api_sleep()
         has_heavy_injury = _check_heavy_injury(getpartyinfo_resp)
         low_fatigue_sids: list[int] = []
         critical_fatigue_sids: list[int] = []
@@ -239,7 +239,7 @@ def _run_dungeon_floor(
             # 注意：conquest 无 hp/hp_max 字段，必须用 getpartyinfo 才能检测到重伤
             if not is_finish:
                 pi = client._post("party/getpartyinfo", extra={"party_no": DUNGEON_PARTY_NO})
-                battle_sleep()
+                api_sleep()
                 if _check_heavy_injury(pi):
                     injured_sids = [
                         str(sid) for sid, sd in pi.get("sword", {}).items()
@@ -256,11 +256,11 @@ def _run_dungeon_floor(
 
     # 3. 结算（resp 含新 token，由 client 自动更新）
     client._post("sally/resetsallystatus")
-    battle_sleep()
+    api_sleep()
 
     # 4. 刷新队伍状态，同时检查重伤
     getpartyinfo_resp = client._post("party/getpartyinfo", extra={"party_no": DUNGEON_PARTY_NO})
-    battle_sleep()
+    api_sleep()
 
     # 5. 若有重伤，发送确认并在 HP 数据准确窗口（resetsallystatus 后、sally 前）立即治疗
     # 队长重伤时 getpartyinfo HP 数据可能不准，直接强制标记
@@ -268,9 +268,9 @@ def _run_dungeon_floor(
     if has_heavy_injury:
         logger.warning(f"  第 {layer_id} 层检测到重伤，发送确认并立即治疗（HP 准确窗口）...")
         client._post("sally/updateautoplayflaginsally", extra={"type": 3})
-        battle_sleep()
+        api_sleep()
         client._post("party/list")
-        battle_sleep()
+        api_sleep()
         # API 返回格式：sword[serial_id_str] = {...}，值中无 serial_id 字段，需从键取
         partylist_swords: dict[int, dict] = {}
         for str_sid, sd in getpartyinfo_resp.get("sword", {}).items():
@@ -321,7 +321,7 @@ def run_dungeon_floor_loop(
 
     # 进入活动页，预先排列气力
     client._post("sally")
-    battle_sleep()
+    api_sleep()
     _sort_fatigued_swords_to_front(client)
 
     floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
@@ -336,7 +336,7 @@ def run_dungeon_floor_loop(
             # 归城，重新排列气力，休息，再进入
             logger.info(f"  归城，调整气力排序，休息 {DUNGEON_REST_SECONDS}s...")
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             _sort_fatigued_swords_to_front(client)
             run_repair_check(client, DUNGEON_PARTY_NO)
             quick_expedition_check(client)
@@ -359,7 +359,7 @@ def run_dungeon_floor_loop(
                 consecutive_eventsally_failures = 0
                 logger.info("  eventsally 失败但重伤已处理，归城重排后重试...")
                 client._post("sally")
-                battle_sleep()
+                api_sleep()
                 _sort_fatigued_swords_to_front(client)
                 continue
             consecutive_eventsally_failures += 1
@@ -381,7 +381,7 @@ def run_dungeon_floor_loop(
         if has_injury:
             logger.info("  重伤治疗已在层内完成，归城重排后继续...")
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
             continue
@@ -392,7 +392,7 @@ def run_dungeon_floor_loop(
                 + (f"，极低气力（<{DUNGEON_FATIGUE_CRITICAL}）：{critical_fatigue_sids}" if critical_fatigue_sids else "")
             )
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             recover_sword_fatigue(client, DUNGEON_PARTY_NO, low_fatigue_sids)
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
@@ -401,7 +401,7 @@ def run_dungeon_floor_loop(
         if low_fatigue_sids:
             logger.info("  检测到低气力，归城重排后继续...")
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
             continue
@@ -431,7 +431,7 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
 
     # 进入活动页，排列低气力刀
     client._post("sally")
-    battle_sleep()
+    api_sleep()
     _sort_fatigued_swords_to_front(client)
 
     floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
@@ -444,7 +444,7 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
             # 归城，开始新周期
             logger.info("  归城...")
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
             consecutive_eventsally_failures = 0
@@ -460,7 +460,7 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
                 consecutive_eventsally_failures = 0
                 logger.info("  eventsally 失败但重伤已处理，归城重排后重试同层...")
                 client._post("sally")
-                battle_sleep()
+                api_sleep()
                 _sort_fatigued_swords_to_front(client)
                 continue
             consecutive_eventsally_failures += 1
@@ -482,7 +482,7 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
         if has_injury:
             logger.info("  重伤治疗已在层内完成，归城重排后继续...")
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
 
@@ -492,7 +492,7 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
                 + (f"，极低气力（<{DUNGEON_FATIGUE_CRITICAL}）：{critical_fatigue_sids}" if critical_fatigue_sids else "")
             )
             client._post("sally")
-            battle_sleep()
+            api_sleep()
             recover_sword_fatigue(client, DUNGEON_PARTY_NO, low_fatigue_sids)
             _sort_fatigued_swords_to_front(client)
             floors_left_in_cycle = DUNGEON_FLOORS_PER_CYCLE
@@ -507,6 +507,6 @@ def run_dungeon_climb(client: ToukenClient, start_layer: int | None = None) -> N
     # 全部完成，归城并检查重伤
     logger.info("地下城全部层打完，归城...")
     client._post("sally")
-    battle_sleep()
+    api_sleep()
     run_repair_check(client, DUNGEON_PARTY_NO)
     logger.info("地下城全部结束")

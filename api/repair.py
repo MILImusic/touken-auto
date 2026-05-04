@@ -26,7 +26,7 @@ import time
 from loguru import logger
 
 from .client import ToukenClient
-from .battle import remove_sword, set_sword, run_battle_1_1, get_party_slots, battle_sleep
+from .battle import api_sleep, remove_sword, set_sword, run_battle_1_1, get_party_slots
 
 HAKUSAN_SWORD_IDS:   set[int] = {164, 165}  # 白山吉光（164=未極化, 165=極化）
 HAKUSAN_PARTY_NO:    int = 1     # 白山吉光专属治疗队（槽1为固定队长，平时只放白山）
@@ -148,7 +148,7 @@ def _has_any_equip(snapshot: dict) -> bool:
 def _remove_all_equip(client: ToukenClient, serial_id: int) -> None:
     logger.info(f"  卸除 serial_id={serial_id} 全部刀装（equip/removeall）")
     client._post("equip/removeall", extra={"sword_serial_id": serial_id})
-    battle_sleep()
+    api_sleep()
 
 
 def _restore_equip(client: ToukenClient, serial_id: int, snapshot: dict, skip_item: bool = False) -> None:
@@ -159,7 +159,7 @@ def _restore_equip(client: ToukenClient, serial_id: int, snapshot: dict, skip_it
     logger.info(f"  还原 serial_id={serial_id} 刀装...")
     # 先清空（移除治疗时装的御守等可能残留的装备）
     client._post("equip/removeall", extra={"sword_serial_id": serial_id})
-    battle_sleep()
+    api_sleep()
     for slot_no, equip_sid in snapshot["equip"].items():
         if equip_sid:
             client._post("equip/setequip", extra={
@@ -167,20 +167,20 @@ def _restore_equip(client: ToukenClient, serial_id: int, snapshot: dict, skip_it
                 "serial_id":       equip_sid,
                 "slot_no":         slot_no,
             })
-            battle_sleep()
+            api_sleep()
     if snapshot["horse"]:
         client._post("equip/setequip", extra={
             "sword_serial_id": serial_id,
             "serial_id":       snapshot["horse"],
             "slot_no":         0,
         })
-        battle_sleep()
+        api_sleep()
     if not skip_item and snapshot["item"]:
         client._post("equip/setitem", extra={
             "sword_serial_id": serial_id,
             "consumable_id":   snapshot["item"],
         })
-        battle_sleep()
+        api_sleep()
     for slot_no, artifact_sid in snapshot["artifact"].items():
         if artifact_sid:
             client._post("equip/setartifact", extra={
@@ -188,7 +188,7 @@ def _restore_equip(client: ToukenClient, serial_id: int, snapshot: dict, skip_it
                 "artifact_serial_id": artifact_sid,
                 "slot_no":            slot_no,
             })
-            battle_sleep()
+            api_sleep()
     logger.info(f"  serial_id={serial_id} 刀装已还原{' (御守已卸除)' if skip_item else ''}")
 
 
@@ -358,7 +358,7 @@ def run_all_repairs(
         if order == 1:
             continue
         remove_sword(client, HAKUSAN_PARTY_NO, order, sid)
-        battle_sleep()
+        api_sleep()
 
     # 4. 逐一治疗
     _current_injured: dict | None = None
@@ -395,13 +395,13 @@ def run_all_repairs(
                     f"（槽{displaced_order}）升为临时队长..."
                 )
                 set_sword(client, orig_pno, 1, displaced_sid)
-                battle_sleep()
+                api_sleep()
                 # 此后：displaced_sid 在槽1，injured_sid 在 displaced_order 槽
 
         # 重伤刀放入槽2
         set_sword(client, HAKUSAN_PARTY_NO, 2, injured_sid)
         _current_injured["moved"] = True
-        battle_sleep()
+        api_sleep()
 
         # 卸装
         has_equip = _has_any_equip(equip_snapshot)
@@ -417,14 +417,14 @@ def run_all_repairs(
                 "sword_serial_id": injured_sid,
                 "consumable_id":   hakusan_item_id,
             })
-            battle_sleep()
+            api_sleep()
 
         # 出阵 1-1，仅一轮；治疗后仍重伤视为 bug，终止程序
         run_battle_1_1(client, HAKUSAN_PARTY_NO)
         record_heal_cost()
         # conquest 无 HP 字段，必须用 getpartyinfo 验证治疗结果
         heal_pi = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
-        battle_sleep()
+        api_sleep()
         fresh_sword = heal_pi.get("sword", {}).get(str(injured_sid), {})
         hp_now     = fresh_sword.get("hp")
         hp_max_now = fresh_sword.get("hp_max")
@@ -462,7 +462,7 @@ def run_all_repairs(
                 "sword_serial_id": hakusan_sid,
                 "consumable_id":   hakusan_item_id,
             })
-            battle_sleep()
+            api_sleep()
 
         # 还原刀装（刀还在部队1槽2，方便验证）
         if has_equip:
@@ -477,10 +477,10 @@ def run_all_repairs(
                 "is_event":        0,
                 "is_firstattack":  1,
             })
-            battle_sleep()
+            api_sleep()
             # 验证（刀还在部队1，getpartyinfo 能查到）
             verify_resp = client._post("party/getpartyinfo", extra={"party_no": HAKUSAN_PARTY_NO})
-            battle_sleep()
+            api_sleep()
             sword_after = verify_resp.get("sword", {}).get(str(injured_sid), {})
             equipped = any(sword_after.get(f"equip_serial_id{i}") for i in range(1, 5))
             if not equipped:
@@ -492,16 +492,16 @@ def run_all_repairs(
 
         # 移出槽2
         remove_sword(client, HAKUSAN_PARTY_NO, 2, injured_sid)
-        battle_sleep()
+        api_sleep()
 
         # 归还至原队伍（必须执行，不能被装备验证阻断）
         if orig_pno != HAKUSAN_PARTY_NO:
             if orig_order == 1 and displaced_order is not None and displaced_sid is not None:
                 # 队长还原：伤刀放回非队长槽 → 交换到队长位
                 set_sword(client, orig_pno, displaced_order, injured_sid)
-                battle_sleep()
+                api_sleep()
                 resp = set_sword(client, orig_pno, 1, injured_sid)
-                battle_sleep()
+                api_sleep()
                 # 验证交换结果：临时队长是否还在队伍里
                 party_data = resp.get("party", {}).get(str(orig_pno), {})
                 slots_after = party_data.get("slot", {})
@@ -514,10 +514,10 @@ def run_all_repairs(
                         f"  交换后临时队长 serial_id={displaced_sid} 不在队伍中，手动补回槽{displaced_order}..."
                     )
                     set_sword(client, orig_pno, displaced_order, displaced_sid)
-                    battle_sleep()
+                    api_sleep()
             else:
                 set_sword(client, orig_pno, orig_order, injured_sid)
-                battle_sleep()
+                api_sleep()
             logger.info(f"  serial_id={injured_sid} 已归还至 部隊{orig_pno} 槽{orig_order}")
             _current_injured = None  # 归还成功，清除跟踪
       except Exception as e:
@@ -533,9 +533,9 @@ def run_all_repairs(
                     pass
                 if ci["order"] == 1 and ci["displaced_order"] is not None:
                     set_sword(client, ci["pno"], ci["displaced_order"], ci["sid"])
-                    battle_sleep()
+                    api_sleep()
                     resp = set_sword(client, ci["pno"], 1, ci["sid"])
-                    battle_sleep()
+                    api_sleep()
                     party_data = resp.get("party", {}).get(str(ci["pno"]), {})
                     slots_after = party_data.get("slot", {})
                     d_sid = ci["displaced_sid"]
@@ -547,7 +547,7 @@ def run_all_repairs(
                         set_sword(client, ci["pno"], ci["displaced_order"], d_sid)
                 else:
                     set_sword(client, ci["pno"], ci["order"], ci["sid"])
-                battle_sleep()
+                api_sleep()
                 logger.info(f"  紧急归还成功")
             except Exception as re_err:
                 logger.error(f"  紧急归还失败：{re_err}")
@@ -558,7 +558,7 @@ def run_all_repairs(
         logger.info(f"还原 部隊{HAKUSAN_PARTY_NO} 原编成...")
         for order, sid in sorted(party2_snapshot.items()):
             set_sword(client, HAKUSAN_PARTY_NO, order, sid)
-            battle_sleep()
+            api_sleep()
 
     # 6. 验证各队编成人数是否与治疗前一致
     verify_conquest = client.get_conquest_data()
@@ -586,7 +586,7 @@ def run_all_repairs(
                 if next_slot:
                     logger.info(f"  补回 serial_id={m_sid} 至 部隊{pno} 槽{next_slot}...")
                     set_sword(client, pno, next_slot, m_sid)
-                    battle_sleep()
+                    api_sleep()
                     next_slot = next((i for i in range(next_slot + 1, 7) if i not in slots_used), None)
 
     logger.opt(colors=True).info("<green>所有重伤治疗完成</green>")
