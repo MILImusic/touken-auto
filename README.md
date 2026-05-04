@@ -79,6 +79,8 @@
 - Python 3.11+
 - Google Chrome（需要一个已登录 DMM 的 Profile）
 
+> **关于跨平台：** macOS 限定仅因为 `auth/auto_token.py` 中的自动登录模块使用了 AppleScript（osascript）和 macOS 的 Chrome 路径。核心的游戏 API 逻辑（`api/` 目录）全部是纯 HTTP 请求，与平台无关。如果你能改写 `auth/` 模块的登录方式（换成 Windows 的 Chrome 路径、替换 osascript 调用），其余代码可以直接在其他平台运行。
+
 ## 安装
 
 ```bash
