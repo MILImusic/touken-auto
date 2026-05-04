@@ -78,7 +78,7 @@
 ## 安装
 
 ```bash
-git clone https://github.com/your-username/touken-auto.git
+git clone https://github.com/MILImusic/touken-auto.git
 cd touken-auto
 python3 -m venv venv
 source venv/bin/activate
